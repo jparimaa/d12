@@ -29,5 +29,6 @@ target_link_libraries(${PROJECT_NAME}
         d3d12.lib
         dxgi.lib
         dxguid.lib
+        D3DCompiler.lib
         "${GLFW_PATH}/lib-vc2015/glfw3.lib"
 )

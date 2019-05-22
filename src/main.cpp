@@ -5,14 +5,19 @@
 #include <dxgi1_4.h>
 #include <windows.h>
 #include "d3dx12.h"
+#include <DirectXMath.h>
+#include <DirectXColors.h>
+#include <d3dcompiler.h>
+
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
 #include <iostream>
 #include <cassert>
+#include <vector>
 
-#define DX_CHECK(f)                                                                                        \
+#define CHECK(f)                                                                                           \
     {                                                                                                      \
         HRESULT res = (f);                                                                                 \
         if (FAILED(res))                                                                                   \
@@ -29,6 +34,39 @@ const int c_swapChainBufferCount = 2;
 const int c_windowWidth = 1200;
 const int c_windowHeight = 900;
 
+struct Vertex
+{
+    DirectX::XMFLOAT3 position;
+    DirectX::XMFLOAT4 color;
+};
+
+uint32_t roundUpByteSize(uint32_t byteSize)
+{
+    return (byteSize + 255) & ~255;
+}
+
+Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::wstring& filename,
+                                               const D3D_SHADER_MACRO* defines,
+                                               const std::string& entrypoint,
+                                               const std::string& target)
+{
+    uint32_t compileFlags = 0;
+#if defined(DEBUG) || defined(_DEBUG)
+    compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+    Microsoft::WRL::ComPtr<ID3DBlob> byteCode = nullptr;
+    Microsoft::WRL::ComPtr<ID3DBlob> errors;
+    CHECK(D3DCompileFromFile(filename.c_str(), defines, D3D_COMPILE_STANDARD_FILE_INCLUDE, entrypoint.c_str(), target.c_str(), compileFlags, 0, &byteCode, &errors));
+
+    if (errors != nullptr)
+    {
+        OutputDebugStringA((char*)errors->GetBufferPointer());
+    }
+
+    return byteCode;
+}
+
 int main()
 {
     // Create window
@@ -39,10 +77,10 @@ int main()
 
     // Create dxgi factory and d3d device
     Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
-    DX_CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)));
+    CHECK(CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)));
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice;
-    DX_CHECK(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d3dDevice)));
+    CHECK(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&d3dDevice)));
 
     // Check feature support
     D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels;
@@ -50,7 +88,7 @@ int main()
     msQualityLevels.SampleCount = 4;
     msQualityLevels.Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
     msQualityLevels.NumQualityLevels = 0;
-    DX_CHECK(d3dDevice->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &msQualityLevels, sizeof(msQualityLevels)));
+    CHECK(d3dDevice->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &msQualityLevels, sizeof(msQualityLevels)));
     assert(msQualityLevels.NumQualityLevels > 0 && "Unexpected MSAA quality level");
 
     // Create fence
@@ -67,13 +105,13 @@ int main()
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue;
-    DX_CHECK(d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue)));
+    CHECK(d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue)));
 
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> directCmdListAlloc;
-    DX_CHECK(d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(directCmdListAlloc.GetAddressOf())));
+    CHECK(d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(directCmdListAlloc.GetAddressOf())));
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList;
-    DX_CHECK(d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, directCmdListAlloc.Get(), nullptr, IID_PPV_ARGS(commandList.GetAddressOf())));
+    CHECK(d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, directCmdListAlloc.Get(), nullptr, IID_PPV_ARGS(commandList.GetAddressOf())));
     commandList->Close();
 
     // Create descriptor heaps
@@ -83,7 +121,7 @@ int main()
     rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     rtvHeapDesc.NodeMask = 0;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvHeap;
-    DX_CHECK(d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(rtvHeap.GetAddressOf())));
+    CHECK(d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(rtvHeap.GetAddressOf())));
 
     D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
     dsvHeapDesc.NumDescriptors = 1;
@@ -91,7 +129,7 @@ int main()
     dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     dsvHeapDesc.NodeMask = 0;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> dsvHeap;
-    DX_CHECK(d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(dsvHeap.GetAddressOf())));
+    CHECK(d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(dsvHeap.GetAddressOf())));
 
     // Create swap chain
     Microsoft::WRL::ComPtr<IDXGISwapChain> swapChain;
@@ -114,7 +152,7 @@ int main()
     swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
-    DX_CHECK(dxgiFactory->CreateSwapChain(commandQueue.Get(), &swapChainDesc, swapChain.GetAddressOf()));
+    CHECK(dxgiFactory->CreateSwapChain(commandQueue.Get(), &swapChainDesc, swapChain.GetAddressOf()));
 
     // Create render targets
     Microsoft::WRL::ComPtr<ID3D12Resource> swapChainBuffer[c_swapChainBufferCount];
@@ -122,7 +160,7 @@ int main()
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
     for (UINT i = 0; i < c_swapChainBufferCount; ++i)
     {
-        DX_CHECK(swapChain->GetBuffer(i, IID_PPV_ARGS(&swapChainBuffer[i])));
+        CHECK(swapChain->GetBuffer(i, IID_PPV_ARGS(&swapChainBuffer[i])));
         d3dDevice->CreateRenderTargetView(swapChainBuffer[i].Get(), nullptr, rtvHeapHandle);
         rtvHeapHandle.Offset(1, rtvDescriptorSize);
     }
@@ -147,12 +185,12 @@ int main()
     optClear.DepthStencil.Stencil = 0;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> depthStencilBuffer;
-    DX_CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
-                                                D3D12_HEAP_FLAG_NONE,
-                                                &depthStencilDesc,
-                                                D3D12_RESOURCE_STATE_COMMON,
-                                                &optClear,
-                                                IID_PPV_ARGS(depthStencilBuffer.GetAddressOf())));
+    CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+                                             D3D12_HEAP_FLAG_NONE,
+                                             &depthStencilDesc,
+                                             D3D12_RESOURCE_STATE_COMMON,
+                                             &optClear,
+                                             IID_PPV_ARGS(depthStencilBuffer.GetAddressOf())));
 
     // Setup viewprt and scissor
     D3D12_VIEWPORT screenViewport{};
@@ -165,6 +203,99 @@ int main()
 
     D3D12_RECT scissorRect{0, 0, c_windowWidth, c_windowHeight};
 
+    // Create descriptor heap
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> cbvHeap = nullptr;
+    D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+    cbvHeapDesc.NumDescriptors = 1;
+    cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    cbvHeapDesc.NodeMask = 0;
+    CHECK(d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&cbvHeap)));
+
+    // Create constant buffer
+    Microsoft::WRL::ComPtr<ID3D12Resource> constantBuffer;
+    uint32_t constantBufferSize = roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
+    CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+                                             D3D12_HEAP_FLAG_NONE,
+                                             &CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize),
+                                             D3D12_RESOURCE_STATE_GENERIC_READ,
+                                             nullptr,
+                                             IID_PPV_ARGS(&constantBuffer)));
+
+    char* mappedData = nullptr;
+    CHECK(constantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+    cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
+    cbvDesc.SizeInBytes = constantBufferSize;
+
+    d3dDevice->CreateConstantBufferView(&cbvDesc, cbvHeap->GetCPUDescriptorHandleForHeapStart());
+
+    // Create root signature
+    CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+
+    CD3DX12_DESCRIPTOR_RANGE cbvTable;
+    cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+    slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable);
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+    Microsoft::WRL::ComPtr<ID3DBlob> serializedRootSig = nullptr;
+    Microsoft::WRL::ComPtr<ID3DBlob> errorBlob = nullptr;
+    CHECK(D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf()));
+
+    if (errorBlob != nullptr)
+    {
+        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature = nullptr;
+    CHECK(d3dDevice->CreateRootSignature(0,
+                                         serializedRootSig->GetBufferPointer(),
+                                         serializedRootSig->GetBufferSize(),
+                                         IID_PPV_ARGS(&rootSignature)));
+
+    // Create shaders
+    Microsoft::WRL::ComPtr<ID3DBlob> vertexShader = compileShader(L"..\\shaders\\simple.hlsl", nullptr, "VS", "vs_5_0");
+    Microsoft::WRL::ComPtr<ID3DBlob> pixelShader = compileShader(L"..\\shaders\\simple.hlsl", nullptr, "PS", "ps_5_0");
+
+    // Set input layout
+    std::vector<D3D12_INPUT_ELEMENT_DESC> vertexInputLayout = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+
+    // Create vertex input buffers
+    /*
+    std::vector<Vertex> vertices = {
+        Vertex({DirectX::XMFLOAT3(-1.0f, -1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::White)}),
+        Vertex({DirectX::XMFLOAT3(-1.0f, +1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::Black)}),
+        Vertex({DirectX::XMFLOAT3(+1.0f, +1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::Red)}),
+        Vertex({DirectX::XMFLOAT3(+1.0f, -1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::Green)}),
+        Vertex({DirectX::XMFLOAT3(-1.0f, -1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Blue)}),
+        Vertex({DirectX::XMFLOAT3(-1.0f, +1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Yellow)}),
+        Vertex({DirectX::XMFLOAT3(+1.0f, +1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Cyan)}),
+        Vertex({DirectX::XMFLOAT3(+1.0f, -1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Magenta)})};
+
+    std::vector<uint16_t> indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 4, 5, 1, 4, 1, 0, 3, 2, 6, 3, 6, 7, 1, 5, 6, 1, 6, 2, 4, 0, 3, 4, 3, 7};
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferGPU = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferGPU = nullptr;
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> VertexBufferUploader = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> IndexBufferUploader = nullptr;
+
+    const size_t vbByteSize = vertices.size() * sizeof(Vertex);
+    const size_t ibByteSize = indices.size() * sizeof(uint16_t);
+
+    Microsoft::WRL::ComPtr<ID3DBlob> vertexBufferCPU = nullptr;
+    CHECK(D3DCreateBlob(vbByteSize, &vertexBufferCPU));
+    CopyMemory(vertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+    Microsoft::WRL::ComPtr<ID3DBlob> indexBufferCPU = nullptr;
+    CHECK(D3DCreateBlob(ibByteSize, &indexBufferCPU));
+    CopyMemory(indexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+	*/
+
     // Render loop
     int currentBackBufferIndex = 0;
     UINT64 currentFence = 0;
@@ -173,8 +304,8 @@ int main()
     {
         glfwPollEvents();
 
-        DX_CHECK(directCmdListAlloc->Reset());
-        DX_CHECK(commandList->Reset(directCmdListAlloc.Get(), nullptr));
+        CHECK(directCmdListAlloc->Reset());
+        CHECK(commandList->Reset(directCmdListAlloc.Get(), nullptr));
 
         ID3D12Resource* currentBackBuffer = swapChainBuffer[currentBackBufferIndex].Get();
         commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
@@ -193,20 +324,20 @@ int main()
 
         commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
-        DX_CHECK(commandList->Close());
+        CHECK(commandList->Close());
 
         std::vector<ID3D12CommandList*> cmdLists{commandList.Get()};
         commandQueue->ExecuteCommandLists(static_cast<UINT>(cmdLists.size()), cmdLists.data());
 
-        DX_CHECK(swapChain->Present(0, 0));
+        CHECK(swapChain->Present(0, 0));
         currentBackBufferIndex = (currentBackBufferIndex + 1) % c_swapChainBufferCount;
 
         // Wait
         currentFence++;
-        DX_CHECK(commandQueue->Signal(fence.Get(), currentFence));
+        CHECK(commandQueue->Signal(fence.Get(), currentFence));
         assert(fence->GetCompletedValue() != UINT64_MAX);
         HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
-        DX_CHECK(fence->SetEventOnCompletion(currentFence, eventHandle));
+        CHECK(fence->SetEventOnCompletion(currentFence, eventHandle));
         WaitForSingleObject(eventHandle, INFINITE);
         CloseHandle(eventHandle);
     }
