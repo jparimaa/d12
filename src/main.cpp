@@ -33,6 +33,7 @@ const DXGI_FORMAT c_depthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 const int c_swapChainBufferCount = 2;
 const int c_windowWidth = 1200;
 const int c_windowHeight = 900;
+const float c_aspectRatio = static_cast<float>(c_windowWidth) / static_cast<float>(c_windowHeight);
 bool running = true;
 
 struct Vertex
@@ -288,9 +289,6 @@ int main()
                                              nullptr,
                                              IID_PPV_ARGS(&constantBuffer)));
 
-    char* mappedData = nullptr;
-    CHECK(constantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
-
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
     cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
     cbvDesc.SizeInBytes = constantBufferSize;
@@ -346,16 +344,6 @@ int main()
 
     const size_t vbByteSize = vertices.size() * sizeof(Vertex);
     const size_t ibByteSize = indices.size() * sizeof(uint16_t);
-    /*
-    Microsoft::WRL::ComPtr<ID3DBlob> vertexBufferCPU = nullptr;
-    Microsoft::WRL::ComPtr<ID3DBlob> indexBufferCPU = nullptr;
-
-	CHECK(D3DCreateBlob(vbByteSize, &vertexBufferCPU));
-    CHECK(D3DCreateBlob(ibByteSize, &indexBufferCPU));
-    
-	CopyMemory(vertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-    CopyMemory(indexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-	*/
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer = nullptr;
@@ -417,21 +405,24 @@ int main()
         glfwPollEvents();
 
         // Update
-        /*
         DirectX::XMMATRIX world = DirectX::XMMatrixIdentity();
 
-        DirectX::XMVECTOR pos = DirectX::XMVectorSet(0.0f, 0.0f, 10.0f, 0.0f);
+        DirectX::XMVECTOR pos = DirectX::XMVectorSet(0.0f, 3.0f, -10.0f, 1.0f);
         DirectX::XMVECTOR target = DirectX::XMVectorZero();
         DirectX::XMVECTOR up = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
         DirectX::XMMATRIX view = DirectX::XMMatrixLookAtLH(pos, target, up);
 
-        DirectX::XMMATRIX proj = DirectX::XMMatrixPerspectiveFovLH(0.785f, 16.0f / 9.0f, 1.0f, 1000.0f);
+        DirectX::XMMATRIX proj = DirectX::XMMatrixPerspectiveFovLH(0.785f, c_aspectRatio, 0.1f, 100.0f);
         DirectX::XMMATRIX worldViewProj = world * view * proj;
 
-        memcpy(&mappedData, &worldViewProj, sizeof(DirectX::XMMATRIX));
-		*/
+        DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
 
-        // Draw
+        char* mappedData = nullptr;
+        CHECK(constantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
+        memcpy(&mappedData[0], &wvp, sizeof(DirectX::XMMATRIX));
+        constantBuffer->Unmap(0, nullptr);
+
+        // Rendering
         CHECK(directCmdListAlloc->Reset());
         CHECK(commandList->Reset(directCmdListAlloc.Get(), PSO.Get()));
 
@@ -449,7 +440,7 @@ int main()
 
         commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
 
-        // Render
+        // Draw commands
         std::vector<ID3D12DescriptorHeap*> descriptorHeaps{cbvHeap.Get()};
         commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
@@ -482,9 +473,6 @@ int main()
         WaitForSingleObject(eventHandle, INFINITE);
         CloseHandle(eventHandle);
     }
-
-    constantBuffer->Unmap(0, nullptr);
-    mappedData = nullptr;
 
     glfwDestroyWindow(window);
     glfwTerminate();
