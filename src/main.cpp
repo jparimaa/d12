@@ -33,6 +33,7 @@ const DXGI_FORMAT c_depthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
 const int c_swapChainBufferCount = 2;
 const int c_windowWidth = 1200;
 const int c_windowHeight = 900;
+bool running = true;
 
 struct Vertex
 {
@@ -109,6 +110,26 @@ int main()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow* window = glfwCreateWindow(c_windowWidth, c_windowHeight, "DX12", nullptr, nullptr);
     glfwSetWindowPos(window, 1200, 200);
+
+    auto keyCallback = [](GLFWwindow* win, int key, int scancode, int action, int mods) {
+        if (key == GLFW_KEY_ESCAPE)
+        {
+            running = false;
+        }
+    };
+    glfwSetKeyCallback(window, keyCallback);
+
+    // Enable GBV
+    Microsoft::WRL::ComPtr<ID3D12Debug> spDebugController0;
+    Microsoft::WRL::ComPtr<ID3D12Debug1> spDebugController1;
+    CHECK(D3D12GetDebugInterface(IID_PPV_ARGS(&spDebugController0)));
+    CHECK(spDebugController0->QueryInterface(IID_PPV_ARGS(&spDebugController1)));
+    spDebugController1->SetEnableGPUBasedValidation(true);
+
+    // Enable debug layer
+    Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
+    CHECK(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)));
+    debugController->EnableDebugLayer();
 
     // Create dxgi factory and d3d device
     Microsoft::WRL::ComPtr<IDXGIFactory4> dxgiFactory;
@@ -225,6 +246,17 @@ int main()
                                              D3D12_RESOURCE_STATE_COMMON,
                                              &optClear,
                                              IID_PPV_ARGS(depthStencilBuffer.GetAddressOf())));
+
+    // Create descriptor to mip level 0 of entire resource using the format of the resource.
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
+    dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    dsvDesc.Format = c_depthStencilFormat;
+    dsvDesc.Texture2D.MipSlice = 0;
+    D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = dsvHeap->GetCPUDescriptorHandleForHeapStart();
+    d3dDevice->CreateDepthStencilView(depthStencilBuffer.Get(), &dsvDesc, depthStencilView);
+
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(depthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE));
 
     // Setup viewprt and scissor
     D3D12_VIEWPORT screenViewport{};
@@ -380,7 +412,7 @@ int main()
     int currentBackBufferIndex = 0;
     UINT64 currentFence = 0;
 
-    while (!glfwWindowShouldClose(window))
+    while (!glfwWindowShouldClose(window) && running)
     {
         glfwPollEvents();
 
@@ -413,7 +445,6 @@ int main()
         const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
         commandList->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
 
-        D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = dsvHeap->GetCPUDescriptorHandleForHeapStart();
         commandList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
         commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
@@ -455,5 +486,7 @@ int main()
     constantBuffer->Unmap(0, nullptr);
     mappedData = nullptr;
 
+    glfwDestroyWindow(window);
+    glfwTerminate();
     return 0;
 }
