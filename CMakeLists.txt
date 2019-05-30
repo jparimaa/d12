@@ -10,25 +10,31 @@ endif()
 
 set(GLFW_PATH CACHE PATH "Path to GLFW")
 
-file(GLOB SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
+function(ADD_PROJECT_WITH_DEFAULT_SETTINGS PROJECT_NAME)
+    file(GLOB SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
 
-set(PROJECT_NAME Minimal)
-add_executable(${PROJECT_NAME} ${SOURCES})
+    add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_11)
-target_compile_options(${PROJECT_NAME} PRIVATE /W3 /WX /MP)
+    target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+            d12
+            d3d12.lib
+            dxgi.lib
+            dxguid.lib
+            D3DCompiler.lib
+    )
 
-target_include_directories(${PROJECT_NAME}
-    PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${GLFW_PATH}/include"
-)
+    target_include_directories(${PROJECT_NAME}
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../Framework/include"
+            "${GLFW_PATH}/include"
+    )
 
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-        d3d12.lib
-        dxgi.lib
-        dxguid.lib
-        D3DCompiler.lib
-        "${GLFW_PATH}/lib-vc2015/glfw3.lib"
-)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W3 /WX /MP)
+
+    add_definitions(-DSHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/shaders/")
+endfunction()
+
+add_subdirectory(Framework)
+add_subdirectory(Examples/Minimal)
