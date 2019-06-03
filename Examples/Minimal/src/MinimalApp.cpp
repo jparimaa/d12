@@ -9,6 +9,8 @@
 #include <DirectXColors.h>
 #include <d3dcompiler.h>
 
+#include <GLFW/glfw3.h>
+
 #include <iostream>
 #include <cassert>
 #include <vector>
@@ -303,6 +305,11 @@ void MinimalApp::update()
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
     CHECK(commandList->Close());
+
+    if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
+    {
+        fw::API::quit();
+    }
 }
 
 void MinimalApp::onGUI()

@@ -15,27 +15,11 @@ Framework::Framework()
 
 Framework::~Framework()
 {
-    glfwDestroyWindow(m_window);
-    glfwTerminate();
 }
 
 bool Framework::initialize()
 {
-    // Create window
-    glfwInit();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "DX12", nullptr, nullptr);
-    glfwSetWindowPos(m_window, 1200, 200);
-    glfwSetWindowUserPointer(m_window, static_cast<void*>(this));
-
-    auto keyCallback = [](GLFWwindow* window, int key, int scancode, int action, int mods) {
-        if (key == GLFW_KEY_ESCAPE)
-        {
-            Framework* fw = static_cast<Framework*>(glfwGetWindowUserPointer(window));
-            fw->m_running = false;
-        }
-    };
-    glfwSetKeyCallback(m_window, keyCallback);
+    m_window.initialize();
 
     // Enable GBV
     Microsoft::WRL::ComPtr<ID3D12Debug> spDebugController0;
@@ -97,8 +81,8 @@ bool Framework::initialize()
     m_swapChain.Reset();
 
     DXGI_SWAP_CHAIN_DESC swapChainDesc;
-    swapChainDesc.BufferDesc.Width = m_windowWidth;
-    swapChainDesc.BufferDesc.Height = m_windowHeight;
+    swapChainDesc.BufferDesc.Width = m_window.getWidth();
+    swapChainDesc.BufferDesc.Height = m_window.getHeight();
     swapChainDesc.BufferDesc.RefreshRate.Numerator = 60;
     swapChainDesc.BufferDesc.RefreshRate.Denominator = 1;
     swapChainDesc.BufferDesc.Format = m_backBufferFormat;
@@ -108,11 +92,12 @@ bool Framework::initialize()
     swapChainDesc.SampleDesc.Quality = 0;
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.BufferCount = m_swapChainBufferCount;
-    swapChainDesc.OutputWindow = glfwGetWin32Window(m_window);
+    swapChainDesc.OutputWindow = m_window.getNativeHandle();
     swapChainDesc.Windowed = true;
     swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
+    m_swapChain.Reset();
     CHECK(m_dxgiFactory->CreateSwapChain(m_commandQueue.Get(), &swapChainDesc, m_swapChain.GetAddressOf()));
 
     // Create render targets
@@ -129,8 +114,8 @@ bool Framework::initialize()
     D3D12_RESOURCE_DESC depthStencilDesc;
     depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthStencilDesc.Alignment = 0;
-    depthStencilDesc.Width = m_windowWidth;
-    depthStencilDesc.Height = m_windowHeight;
+    depthStencilDesc.Width = m_window.getWidth();
+    depthStencilDesc.Height = m_window.getHeight();
     depthStencilDesc.DepthOrArraySize = 1;
     depthStencilDesc.MipLevels = 1;
     depthStencilDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
@@ -172,10 +157,12 @@ void Framework::setApplication(Application* application)
 
 void Framework::execute()
 {
-    while (true)
+    while (m_running && !m_window.shouldClose())
     {
+        m_window.update();
         m_app->update();
         render();
+        m_window.clearKeyStatus();
     }
 }
 void Framework::render()

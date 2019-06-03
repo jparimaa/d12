@@ -4,14 +4,19 @@ namespace fw
 {
 Framework* API::s_framework = nullptr;
 
+void API::quit()
+{
+    s_framework->m_running = false;
+}
+
 int API::getWindowWidth()
 {
-    return s_framework->m_windowWidth;
+    return s_framework->m_window.getWidth();
 }
 
 int API::getWindowHeight()
 {
-    return s_framework->m_windowHeight;
+    return s_framework->m_window.getHeight();
 }
 
 float API::getAspectRatio()
@@ -63,4 +68,30 @@ D3D12_CPU_DESCRIPTOR_HANDLE API::getDepthStencilView()
 {
     return s_framework->m_depthStencilView;
 }
+
+bool API::isKeyPressed(int key)
+{
+    return s_framework->m_window.isKeyPressed(key);
+}
+
+bool API::isKeyDown(int key)
+{
+    return s_framework->m_window.isKeyDown(key);
+}
+
+bool API::isKeyReleased(int key)
+{
+    return s_framework->m_window.isKeyReleased(key);
+}
+
+float API::getMouseDeltaX()
+{
+    return s_framework->m_window.getDeltaX();
+}
+
+float API::getMouseDeltaY()
+{
+    return s_framework->m_window.getDeltaY();
+}
+
 } // namespace fw

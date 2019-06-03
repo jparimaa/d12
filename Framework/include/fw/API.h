@@ -16,6 +16,8 @@ public:
 
     API() = delete;
 
+    static void quit();
+
     static int getWindowWidth();
     static int getWindowHeight();
     static float getAspectRatio();
@@ -31,6 +33,12 @@ public:
     static ID3D12Resource* getCurrentBackBuffer();
     static CD3DX12_CPU_DESCRIPTOR_HANDLE getCurrentBackBufferView();
     static D3D12_CPU_DESCRIPTOR_HANDLE getDepthStencilView();
+
+    static bool isKeyPressed(int key);
+    static bool isKeyDown(int key);
+    static bool isKeyReleased(int key);
+    static float getMouseDeltaX();
+    static float getMouseDeltaY();
 
 private:
     static Framework* s_framework;

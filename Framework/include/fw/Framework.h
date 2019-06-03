@@ -2,10 +2,7 @@
 
 #include "API.h"
 #include "Application.h"
-
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3.h>
-#include <GLFW/glfw3native.h>
+#include "Window.h"
 
 #include <wrl.h>
 #include <d3d12.h>
@@ -37,12 +34,9 @@ private:
     DXGI_FORMAT m_backBufferFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
     DXGI_FORMAT m_depthStencilFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
     int m_swapChainBufferCount = 2;
-    int m_windowWidth = 1200;
-    int m_windowHeight = 900;
-    float m_aspectRatio = static_cast<float>(m_windowWidth) / static_cast<float>(m_windowHeight);
 
+    Window m_window;
     Application* m_app = nullptr;
-    GLFWwindow* m_window = nullptr;
 
     Microsoft::WRL::ComPtr<IDXGIFactory4> m_dxgiFactory;
     Microsoft::WRL::ComPtr<ID3D12Device> m_d3dDevice;
