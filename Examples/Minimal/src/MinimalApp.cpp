@@ -4,6 +4,7 @@
 #include <fw/Common.h>
 #include <fw/API.h>
 #include <fw/Macros.h>
+#include <fw/Transformation.h>
 
 #include "d3dx12.h"
 #include <DirectXMath.h>
@@ -170,12 +171,16 @@ bool MinimalApp::initialize()
 
 void MinimalApp::update()
 {
-    DirectX::XMMATRIX world = DirectX::XMMatrixIdentity();
+    static fw::Transformation transformation;
+    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
+    transformation.updateWorldMatrix();
 
-    DirectX::XMVECTOR pos = DirectX::XMVectorSet(0.0f, 3.0f, -10.0f, 1.0f);
-    DirectX::XMVECTOR target = DirectX::XMVectorZero();
-    DirectX::XMVECTOR up = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-    DirectX::XMMATRIX view = DirectX::XMMatrixLookAtLH(pos, target, up);
+    DirectX::XMMATRIX world = transformation.getWorldMatrix();
+
+    DirectX::XMVECTOR cameraPos = DirectX::XMVectorSet(0.0f, 3.0f, -10.0f, 1.0f);
+    DirectX::XMVECTOR cameraLookAt = DirectX::XMVectorZero();
+    DirectX::XMVECTOR cameraUp = fw::Transformation::UP;
+    DirectX::XMMATRIX view = DirectX::XMMatrixLookAtLH(cameraPos, cameraLookAt, cameraUp);
 
     DirectX::XMMATRIX proj = DirectX::XMMatrixPerspectiveFovLH(0.785f, fw::API::getAspectRatio(), 0.1f, 100.0f);
     DirectX::XMMATRIX worldViewProj = world * view * proj;
