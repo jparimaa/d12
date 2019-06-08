@@ -1,7 +1,6 @@
 #pragma once
 
 #include "fw/Application.h"
-#include "fw/Framework.h"
 
 #include <wrl.h>
 #include <d3d12.h>

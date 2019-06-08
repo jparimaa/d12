@@ -1,10 +1,7 @@
 #include "Framework.h"
 #include "Macros.h"
 
-#include <DirectXMath.h>
-#include <DirectXColors.h>
-#include <d3dcompiler.h>
-#include <iostream>
+#include <cassert>
 
 namespace fw
 {
@@ -110,7 +107,7 @@ bool Framework::initialize()
         rtvHeapHandle.Offset(1, m_rtvDescriptorSize);
     }
 
-    // Create the depth/stencil buffer and view.
+    // Create the depth/stencil buffer
     D3D12_RESOURCE_DESC depthStencilDesc;
     depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthStencilDesc.Alignment = 0;
@@ -136,7 +133,7 @@ bool Framework::initialize()
                                                &optClear,
                                                IID_PPV_ARGS(m_depthStencilBuffer.GetAddressOf())));
 
-    // Create descriptor to mip level 0 of entire resource using the format of the resource.
+    // Create depth stencil view
     D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
     dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
