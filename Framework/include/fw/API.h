@@ -40,6 +40,8 @@ public:
     static float getMouseDeltaX();
     static float getMouseDeltaY();
 
+    static float getTimeDelta();
+
 private:
     static Framework* s_framework;
 };

@@ -24,6 +24,21 @@ void Transformation::setPosition(float x, float y, float z)
     position = DirectX::XMVectorSet(x, y, z, 0.0f);
 }
 
+void Transformation::setPosition(const DirectX::XMVECTOR& p)
+{
+    position = p;
+}
+
+void Transformation::setRotation(const DirectX::XMVECTOR& r)
+{
+    rotation = r;
+}
+
+void Transformation::setRotation(const DirectX::XMFLOAT3& r)
+{
+    rotation = XMLoadFloat3(&r);
+}
+
 void Transformation::move(const XMFLOAT3& translation)
 {
     position += XMLoadFloat3(&translation);

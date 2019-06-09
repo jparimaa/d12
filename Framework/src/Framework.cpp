@@ -144,6 +144,9 @@ bool Framework::initialize()
 
     m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_depthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE));
 
+    m_timeFromBegin = std::chrono::steady_clock::now();
+    m_timeLastUpdate = std::chrono::steady_clock::now();
+
     return true;
 }
 
@@ -157,6 +160,9 @@ void Framework::execute()
     while (m_running && !m_window.shouldClose())
     {
         m_window.update();
+        long long delta = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_timeLastUpdate).count();
+        m_timeDelta = static_cast<float>(delta) / 1000.0f;
+        m_timeLastUpdate = std::chrono::steady_clock::now();
         m_app->update();
         render();
         m_window.clearKeyStatus();

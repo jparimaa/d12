@@ -94,4 +94,9 @@ float API::getMouseDeltaY()
     return s_framework->m_window.getDeltaY();
 }
 
+float API::getTimeDelta()
+{
+    return s_framework->m_timeDelta;
+}
+
 } // namespace fw

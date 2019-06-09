@@ -5,7 +5,6 @@
 #include <fw/API.h>
 #include <fw/Macros.h>
 #include <fw/Transformation.h>
-#include <fw/Camera.h>
 
 #include "d3dx12.h"
 #include <DirectXMath.h>
@@ -167,6 +166,10 @@ bool MinimalApp::initialize()
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue = fw::API::getCommandQueue();
     commandQueue->ExecuteCommandLists((UINT)cmdsLists.size(), cmdsLists.data());
 
+    // Camera
+    m_cameraController.setCamera(&m_camera);
+    m_camera.getTransformation().setPosition(0.0f, 1.0f, -10.0f);
+
     return true;
 }
 
@@ -176,11 +179,11 @@ void MinimalApp::update()
     transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
     transformation.updateWorldMatrix();
 
-    static fw::Camera camera;
-    camera.getTransformation().setPosition(0.0f, 1.0f, -10.0f);
-    camera.updateViewMatrix();
+    m_cameraController.update();
 
-    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * camera.getViewMatrix() * camera.getProjectionMatrix();
+    m_camera.updateViewMatrix();
+
+    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
     DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
 
     char* mappedData = nullptr;

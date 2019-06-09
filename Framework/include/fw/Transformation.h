@@ -19,6 +19,9 @@ public:
     ~Transformation();
 
     void setPosition(float x, float y, float z);
+    void setPosition(const DirectX::XMVECTOR& p);
+    void setRotation(const DirectX::XMVECTOR& r);
+    void setRotation(const DirectX::XMFLOAT3& r);
     void move(const DirectX::XMFLOAT3& translation);
     void move(const DirectX::XMVECTOR& translation);
     void rotate(const DirectX::XMFLOAT3& axis, float amount);

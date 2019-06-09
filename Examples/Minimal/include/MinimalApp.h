@@ -1,6 +1,8 @@
 #pragma once
 
-#include "fw/Application.h"
+#include <fw/Application.h>
+#include <fw/Camera.h>
+#include <fw/CameraController.h>
 
 #include <wrl.h>
 #include <d3d12.h>
@@ -38,4 +40,7 @@ private:
     D3D12_INDEX_BUFFER_VIEW m_indexBufferView;
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_PSO = nullptr;
+
+    fw::Camera m_camera;
+    fw::CameraController m_cameraController;
 };

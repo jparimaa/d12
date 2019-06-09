@@ -11,6 +11,7 @@
 #include "d3dx12.h"
 
 #include <vector>
+#include <chrono>
 
 namespace fw
 {
@@ -59,6 +60,10 @@ private:
 
     int m_currentBackBufferIndex = 0;
     UINT64 m_currentFence = 0;
+
+    std::chrono::steady_clock::time_point m_timeFromBegin;
+    std::chrono::steady_clock::time_point m_timeLastUpdate;
+    float m_timeDelta = 0.0f;
 
     bool m_running = true;
 
