@@ -4,9 +4,9 @@ using namespace DirectX;
 
 namespace fw
 {
-const XMVECTOR Transformation::FORWARD = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-const XMVECTOR Transformation::UP = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-const XMVECTOR Transformation::LEFT = XMVectorSet(-1.0f, 0.0f, 0.0f, 0.0f);
+const XMVECTOR Transformation::c_forward = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+const XMVECTOR Transformation::c_up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+const XMVECTOR Transformation::c_left = XMVectorSet(-1.0f, 0.0f, 0.0f, 0.0f);
 
 Transformation::Transformation() :
     position(XMVectorZero()),
@@ -17,6 +17,11 @@ Transformation::Transformation() :
 
 Transformation::~Transformation()
 {
+}
+
+void Transformation::setPosition(float x, float y, float z)
+{
+    position = DirectX::XMVectorSet(x, y, z, 0.0f);
 }
 
 void Transformation::move(const XMFLOAT3& translation)
@@ -41,28 +46,28 @@ void Transformation::rotate(const XMVECTOR& axis, float amount)
 
 XMVECTOR Transformation::getForward() const
 {
-    return XMVector4Transform(FORWARD, XMMatrixRotationRollPitchYawFromVector(rotation));
+    return XMVector4Transform(c_forward, XMMatrixRotationRollPitchYawFromVector(rotation));
 }
 
 XMVECTOR Transformation::getUp() const
 {
-    return XMVector4Transform(UP, XMMatrixRotationRollPitchYawFromVector(rotation));
+    return XMVector4Transform(c_up, XMMatrixRotationRollPitchYawFromVector(rotation));
 }
 
 XMVECTOR Transformation::getLeft() const
 {
-    return XMVector4Transform(LEFT, XMMatrixRotationRollPitchYawFromVector(rotation));
+    return XMVector4Transform(c_left, XMMatrixRotationRollPitchYawFromVector(rotation));
 }
 
 const XMMATRIX& Transformation::updateWorldMatrix()
 {
-    worldMatrix = XMMatrixScalingFromVector(scale) * XMMatrixRotationRollPitchYawFromVector(rotation) * XMMatrixTranslationFromVector(position);
-    return worldMatrix;
+    m_worldMatrix = XMMatrixScalingFromVector(scale) * XMMatrixRotationRollPitchYawFromVector(rotation) * XMMatrixTranslationFromVector(position);
+    return m_worldMatrix;
 }
 
 const XMMATRIX& Transformation::getWorldMatrix() const
 {
-    return worldMatrix;
+    return m_worldMatrix;
 }
 
 } // namespace fw

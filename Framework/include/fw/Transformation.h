@@ -7,9 +7,9 @@ namespace fw
 class Transformation
 {
 public:
-    static const DirectX::XMVECTOR FORWARD;
-    static const DirectX::XMVECTOR UP;
-    static const DirectX::XMVECTOR LEFT;
+    static const DirectX::XMVECTOR c_forward;
+    static const DirectX::XMVECTOR c_up;
+    static const DirectX::XMVECTOR c_left;
 
     DirectX::XMVECTOR position;
     DirectX::XMVECTOR rotation;
@@ -18,6 +18,7 @@ public:
     Transformation();
     ~Transformation();
 
+    void setPosition(float x, float y, float z);
     void move(const DirectX::XMFLOAT3& translation);
     void move(const DirectX::XMVECTOR& translation);
     void rotate(const DirectX::XMFLOAT3& axis, float amount);
@@ -31,10 +32,10 @@ public:
     const DirectX::XMMATRIX& getWorldMatrix() const;
 
 private:
-    DirectX::XMVECTOR forward;
-    DirectX::XMVECTOR up;
-    DirectX::XMVECTOR left;
-    DirectX::XMMATRIX worldMatrix;
+    DirectX::XMVECTOR m_forward;
+    DirectX::XMVECTOR m_up;
+    DirectX::XMVECTOR m_left;
+    DirectX::XMMATRIX m_worldMatrix;
 };
 
 } // namespace fw

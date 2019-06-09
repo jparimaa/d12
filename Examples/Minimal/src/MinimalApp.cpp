@@ -5,6 +5,7 @@
 #include <fw/API.h>
 #include <fw/Macros.h>
 #include <fw/Transformation.h>
+#include <fw/Camera.h>
 
 #include "d3dx12.h"
 #include <DirectXMath.h>
@@ -175,16 +176,11 @@ void MinimalApp::update()
     transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
     transformation.updateWorldMatrix();
 
-    DirectX::XMMATRIX world = transformation.getWorldMatrix();
+    static fw::Camera camera;
+    camera.getTransformation().setPosition(0.0f, 1.0f, -10.0f);
+    camera.updateViewMatrix();
 
-    DirectX::XMVECTOR cameraPos = DirectX::XMVectorSet(0.0f, 3.0f, -10.0f, 1.0f);
-    DirectX::XMVECTOR cameraLookAt = DirectX::XMVectorZero();
-    DirectX::XMVECTOR cameraUp = fw::Transformation::UP;
-    DirectX::XMMATRIX view = DirectX::XMMatrixLookAtLH(cameraPos, cameraLookAt, cameraUp);
-
-    DirectX::XMMATRIX proj = DirectX::XMMatrixPerspectiveFovLH(0.785f, fw::API::getAspectRatio(), 0.1f, 100.0f);
-    DirectX::XMMATRIX worldViewProj = world * view * proj;
-
+    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * camera.getViewMatrix() * camera.getProjectionMatrix();
     DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
 
     char* mappedData = nullptr;
