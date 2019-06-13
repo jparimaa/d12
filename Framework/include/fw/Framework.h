@@ -41,14 +41,18 @@ private:
 
     Microsoft::WRL::ComPtr<IDXGIFactory4> m_dxgiFactory;
     Microsoft::WRL::ComPtr<ID3D12Device> m_d3dDevice;
-    Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
 
-    UINT m_rtvDescriptorSize;
-    UINT m_dsvDescriptorSize;
-    UINT m_cbvSrvUavDescriptorSize;
+    Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
+    UINT64 m_currentFenceId = 0;
+    std::vector<UINT64> m_fenceIds;
+
+    UINT m_rtvDescriptorIncrementSize;
+    UINT m_dsvDescriptorIncrementSize;
+    UINT m_cbvSrvUavDescriptorIncrementSize;
 
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_commandQueue;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_commandAllocator;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>> m_frameCommandAllocators;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_commandList;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
@@ -58,8 +62,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_depthStencilBuffer;
     D3D12_CPU_DESCRIPTOR_HANDLE m_depthStencilView;
 
-    int m_currentBackBufferIndex = 0;
-    UINT64 m_currentFence = 0;
+    int m_currentFrameIndex = 0;
 
     std::chrono::steady_clock::time_point m_timeFromBegin;
     std::chrono::steady_clock::time_point m_timeLastUpdate;
@@ -67,6 +70,7 @@ private:
 
     bool m_running = true;
 
+    void waitForFrame(int frameIndex);
     void render();
     ID3D12Resource* getCurrentBackBuffer();
     CD3DX12_CPU_DESCRIPTOR_HANDLE getCurrentBackBufferView();

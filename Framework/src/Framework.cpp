@@ -44,12 +44,13 @@ bool Framework::initialize()
     assert(msQualityLevels.NumQualityLevels > 0 && "Unexpected MSAA quality level");
 
     // Create fence
+    m_fenceIds.resize(m_swapChainBufferCount);
     m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
 
     // Get handle increment sizes
-    m_rtvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-    m_dsvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-    m_cbvSrvUavDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    m_rtvDescriptorIncrementSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    m_dsvDescriptorIncrementSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+    m_cbvSrvUavDescriptorIncrementSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // Create command list
     D3D12_COMMAND_QUEUE_DESC queueDesc{};
@@ -58,6 +59,12 @@ bool Framework::initialize()
     CHECK(m_d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_commandQueue)));
     CHECK(m_d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_commandAllocator.GetAddressOf())));
     CHECK(m_d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr, IID_PPV_ARGS(m_commandList.GetAddressOf())));
+
+    m_frameCommandAllocators.resize(m_swapChainBufferCount);
+    for (Microsoft::WRL::ComPtr<ID3D12CommandAllocator>& frameCommandAllocator : m_frameCommandAllocators)
+    {
+        CHECK(m_d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(frameCommandAllocator.GetAddressOf())));
+    }
 
     // Create descriptor heaps
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
@@ -104,7 +111,7 @@ bool Framework::initialize()
     {
         CHECK(m_swapChain->GetBuffer(i, IID_PPV_ARGS(&m_swapChainBuffers[i])));
         m_d3dDevice->CreateRenderTargetView(m_swapChainBuffers[i].Get(), nullptr, rtvHeapHandle);
-        rtvHeapHandle.Offset(1, m_rtvDescriptorSize);
+        rtvHeapHandle.Offset(1, m_rtvDescriptorIncrementSize);
     }
 
     // Create the depth/stencil buffer
@@ -160,40 +167,51 @@ void Framework::execute()
     while (m_running && !m_window.shouldClose())
     {
         m_window.update();
-        long long delta = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_timeLastUpdate).count();
-        m_timeDelta = static_cast<float>(delta) / 1000.0f;
+        long long delta = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - m_timeLastUpdate).count();
+        m_timeDelta = static_cast<float>(delta) / 1000000.0f;
         m_timeLastUpdate = std::chrono::steady_clock::now();
+        waitForFrame(m_currentFrameIndex);
         m_app->update();
         render();
         m_window.clearKeyStatus();
     }
+
+    for (int i = 0; i < m_swapChainBufferCount; ++i)
+    {
+        waitForFrame(i);
+    }
 }
+
+void Framework::waitForFrame(int frameIndex)
+{
+    HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
+    CHECK(m_fence->SetEventOnCompletion(m_fenceIds[frameIndex], eventHandle));
+    WaitForSingleObject(eventHandle, INFINITE);
+    CloseHandle(eventHandle);
+}
+
 void Framework::render()
 {
     std::vector<ID3D12CommandList*> cmdLists{m_commandList.Get()};
     m_commandQueue->ExecuteCommandLists(static_cast<UINT>(cmdLists.size()), cmdLists.data());
 
     CHECK(m_swapChain->Present(0, 0));
-    m_currentBackBufferIndex = (m_currentBackBufferIndex + 1) % m_swapChainBufferCount;
 
-    // Wait
-    m_currentFence++;
-    CHECK(m_commandQueue->Signal(m_fence.Get(), m_currentFence));
-    assert(m_fence->GetCompletedValue() != UINT64_MAX);
-    HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
-    CHECK(m_fence->SetEventOnCompletion(m_currentFence, eventHandle));
-    WaitForSingleObject(eventHandle, INFINITE);
-    CloseHandle(eventHandle);
+    m_fenceIds[m_currentFrameIndex] = m_currentFenceId;
+    CHECK(m_commandQueue->Signal(m_fence.Get(), m_currentFenceId));
+
+    m_currentFrameIndex = (m_currentFrameIndex + 1) % m_swapChainBufferCount;
+    ++m_currentFenceId;
 }
 
 ID3D12Resource* Framework::getCurrentBackBuffer()
 {
-    return m_swapChainBuffers[m_currentBackBufferIndex].Get();
+    return m_swapChainBuffers[m_currentFrameIndex].Get();
 }
 
 CD3DX12_CPU_DESCRIPTOR_HANDLE Framework::getCurrentBackBufferView()
 {
-    return CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_currentBackBufferIndex, m_rtvDescriptorSize);
+    return CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_currentFrameIndex, m_rtvDescriptorIncrementSize);
 }
 
 } // namespace fw

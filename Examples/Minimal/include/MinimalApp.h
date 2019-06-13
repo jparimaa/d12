@@ -7,6 +7,8 @@
 #include <wrl.h>
 #include <d3d12.h>
 
+#include <vector>
+
 class MinimalApp : public fw::Application
 {
 public:
@@ -26,7 +28,7 @@ private:
     D3D12_RECT m_scissorRect;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_cbvHeap = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_constantBuffer = nullptr;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature = nullptr;
 
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;

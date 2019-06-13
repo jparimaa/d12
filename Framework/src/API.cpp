@@ -34,6 +34,21 @@ Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> API::getCommandList()
     return s_framework->m_commandList;
 }
 
+int API::getCurrentFrameIndex()
+{
+    return s_framework->m_currentFrameIndex;
+}
+
+int API::getSwapChainBufferCount()
+{
+    return s_framework->m_swapChainBufferCount;
+}
+
+UINT API::getCbvSrvUavDescriptorIncrementSize()
+{
+    return s_framework->m_cbvSrvUavDescriptorIncrementSize;
+}
+
 Microsoft::WRL::ComPtr<ID3D12CommandQueue> API::getCommandQueue()
 {
     return s_framework->m_commandQueue;
@@ -42,6 +57,11 @@ Microsoft::WRL::ComPtr<ID3D12CommandQueue> API::getCommandQueue()
 Microsoft::WRL::ComPtr<ID3D12CommandAllocator> API::getCommandAllocator()
 {
     return s_framework->m_commandAllocator;
+}
+
+Microsoft::WRL::ComPtr<ID3D12CommandAllocator> API::getCurrentFrameCommandAllocator()
+{
+    return s_framework->m_frameCommandAllocators[s_framework->m_currentFrameIndex];
 }
 
 DXGI_FORMAT API::getBackBufferFormat()

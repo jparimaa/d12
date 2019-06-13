@@ -25,7 +25,12 @@ public:
     static Microsoft::WRL::ComPtr<ID3D12Device> getD3dDevice();
     static Microsoft::WRL::ComPtr<ID3D12CommandQueue> getCommandQueue();
     static Microsoft::WRL::ComPtr<ID3D12CommandAllocator> getCommandAllocator();
+    static Microsoft::WRL::ComPtr<ID3D12CommandAllocator> getCurrentFrameCommandAllocator();
     static Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> getCommandList();
+    static int getCurrentFrameIndex();
+    static int getSwapChainBufferCount();
+
+    static UINT getCbvSrvUavDescriptorIncrementSize();
 
     static DXGI_FORMAT getBackBufferFormat();
     static DXGI_FORMAT getDepthStencilFormat();

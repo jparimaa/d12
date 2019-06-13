@@ -61,7 +61,7 @@ bool MinimalApp::initialize()
     // Create descriptor heap
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
     D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-    cbvHeapDesc.NumDescriptors = 1;
+    cbvHeapDesc.NumDescriptors = fw::API::getSwapChainBufferCount();
     cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     cbvHeapDesc.NodeMask = 0;
@@ -69,18 +69,27 @@ bool MinimalApp::initialize()
 
     // Create constant buffer
     uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
-    CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-                                             D3D12_HEAP_FLAG_NONE,
-                                             &CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize),
-                                             D3D12_RESOURCE_STATE_GENERIC_READ,
-                                             nullptr,
-                                             IID_PPV_ARGS(&m_constantBuffer)));
+    m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
 
-    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-    cbvDesc.BufferLocation = m_constantBuffer->GetGPUVirtualAddress();
-    cbvDesc.SizeInBytes = constantBufferSize;
+    for (int i = 0; i < m_constantBuffers.size(); ++i)
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource>& constantBuffer = m_constantBuffers[i];
+        CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+                                                 D3D12_HEAP_FLAG_NONE,
+                                                 &CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize),
+                                                 D3D12_RESOURCE_STATE_GENERIC_READ,
+                                                 nullptr,
+                                                 IID_PPV_ARGS(&constantBuffer)));
 
-    d3dDevice->CreateConstantBufferView(&cbvDesc, m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+        cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
+        cbvDesc.SizeInBytes = constantBufferSize;
+
+        CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
+        handle.Offset(i, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+        d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+    }
 
     // Create root signature
     CD3DX12_ROOT_PARAMETER slotRootParameter[1];
@@ -186,13 +195,14 @@ void MinimalApp::update()
     DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
     DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
 
+    int currentFrameIndex = fw::API::getCurrentFrameIndex();
     char* mappedData = nullptr;
-    CHECK(m_constantBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
+    CHECK(m_constantBuffers[currentFrameIndex]->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
     memcpy(&mappedData[0], &wvp, sizeof(DirectX::XMMATRIX));
-    m_constantBuffer->Unmap(0, nullptr);
+    m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 
     // Rendering
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator = fw::API::getCommandAllocator();
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator = fw::API::getCurrentFrameCommandAllocator();
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue = fw::API::getCommandQueue();
 
@@ -224,7 +234,9 @@ void MinimalApp::update()
     commandList->IASetIndexBuffer(&m_indexBufferView);
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    commandList->SetGraphicsRootDescriptorTable(0, m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+    CD3DX12_GPU_DESCRIPTOR_HANDLE handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
+    handle.Offset(currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    commandList->SetGraphicsRootDescriptorTable(0, handle);
 
     commandList->DrawIndexedInstanced((UINT)indices.size(), 1, 0, 0, 0);
 
