@@ -129,18 +129,21 @@ bool MinimalApp::initialize()
     const size_t vbByteSize = vertices.size() * sizeof(Vertex);
     const size_t ibByteSize = indices.size() * sizeof(uint16_t);
 
+    Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer = nullptr;
+
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
     m_vertexBufferGPU = fw::createGPUBuffer(d3dDevice.Get(),
                                             commandList.Get(),
                                             vertices.data(),
                                             vbByteSize,
-                                            m_vertexUploadBuffer);
+                                            vertexUploadBuffer);
 
     m_indexBufferGPU = fw::createGPUBuffer(d3dDevice.Get(),
                                            commandList.Get(),
                                            indices.data(),
                                            ibByteSize,
-                                           m_indexUploadBuffer);
+                                           indexUploadBuffer);
 
     // Create views of buffers
     m_vertexBufferView.BufferLocation = m_vertexBufferGPU->GetGPUVirtualAddress();
@@ -169,11 +172,9 @@ bool MinimalApp::initialize()
     psoDesc.DSVFormat = fw::API::getDepthStencilFormat();
     CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PSO)));
 
-    // Execute initialization commands
+    // Execute and wait initialization commands
     CHECK(commandList->Close());
-    std::vector<ID3D12CommandList*> cmdsLists{commandList.Get()};
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue = fw::API::getCommandQueue();
-    commandQueue->ExecuteCommandLists((UINT)cmdsLists.size(), cmdsLists.data());
+    fw::API::completeInitialization();
 
     // Camera
     m_cameraController.setCamera(&m_camera);
@@ -204,7 +205,6 @@ void MinimalApp::update()
     // Rendering
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator = fw::API::getCurrentFrameCommandAllocator();
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
-    Microsoft::WRL::ComPtr<ID3D12CommandQueue> commandQueue = fw::API::getCommandQueue();
 
     CHECK(commandAllocator->Reset());
     CHECK(commandList->Reset(commandAllocator.Get(), m_PSO.Get()));

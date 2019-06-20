@@ -53,11 +53,12 @@ bool Framework::initialize()
     m_cbvSrvUavDescriptorIncrementSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // Create command list
+    CHECK(m_d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_commandAllocator.GetAddressOf())));
+
     D3D12_COMMAND_QUEUE_DESC queueDesc{};
     queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
     queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
     CHECK(m_d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_commandQueue)));
-    CHECK(m_d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_commandAllocator.GetAddressOf())));
     CHECK(m_d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr, IID_PPV_ARGS(m_commandList.GetAddressOf())));
 
     m_frameCommandAllocators.resize(m_swapChainBufferCount);
@@ -180,6 +181,17 @@ void Framework::execute()
     {
         waitForFrame(i);
     }
+}
+
+void Framework::completeInitialization()
+{
+    std::vector<ID3D12CommandList*> cmdsLists{m_commandList.Get()};
+    m_commandQueue->ExecuteCommandLists((UINT)cmdsLists.size(), cmdsLists.data());
+    CHECK(m_commandQueue->Signal(m_fence.Get(), 1));
+    HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
+    CHECK(m_fence->SetEventOnCompletion(1, eventHandle));
+    WaitForSingleObject(eventHandle, INFINITE);
+    CloseHandle(eventHandle);
 }
 
 void Framework::waitForFrame(int frameIndex)

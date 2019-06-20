@@ -16,6 +16,7 @@ public:
 
     API() = delete;
 
+    static void completeInitialization();
     static void quit();
 
     static int getWindowWidth();
@@ -27,6 +28,7 @@ public:
     static Microsoft::WRL::ComPtr<ID3D12CommandAllocator> getCommandAllocator();
     static Microsoft::WRL::ComPtr<ID3D12CommandAllocator> getCurrentFrameCommandAllocator();
     static Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> getCommandList();
+
     static int getCurrentFrameIndex();
     static int getSwapChainBufferCount();
 

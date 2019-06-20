@@ -4,6 +4,11 @@ namespace fw
 {
 Framework* API::s_framework = nullptr;
 
+void API::completeInitialization()
+{
+    s_framework->completeInitialization();
+}
+
 void API::quit()
 {
     s_framework->m_running = false;

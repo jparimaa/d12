@@ -43,7 +43,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Device> m_d3dDevice;
 
     Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
-    UINT64 m_currentFenceId = 0;
+    UINT64 m_currentFenceId = 100;
     std::vector<UINT64> m_fenceIds;
 
     UINT m_rtvDescriptorIncrementSize;
@@ -70,6 +70,7 @@ private:
 
     bool m_running = true;
 
+    void completeInitialization();
     void waitForFrame(int frameIndex);
     void render();
     ID3D12Resource* getCurrentBackBuffer();
