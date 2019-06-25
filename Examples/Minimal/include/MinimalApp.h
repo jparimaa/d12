@@ -4,10 +4,12 @@
 #include <fw/Camera.h>
 #include <fw/CameraController.h>
 
+#include "d3dx12.h"
 #include <wrl.h>
 #include <d3d12.h>
 
 #include <vector>
+#include <cstdint>
 
 class MinimalApp : public fw::Application
 {
@@ -27,9 +29,11 @@ private:
     D3D12_VIEWPORT m_screenViewport;
     D3D12_RECT m_scissorRect;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_cbvHeap = nullptr;
-    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature = nullptr;
+
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_descriptorHeap = nullptr;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_texture;
 
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
@@ -44,4 +48,9 @@ private:
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;
+
+    void createTexture(Microsoft::WRL::ComPtr<ID3D12Resource>& uploadHeap,
+                       CD3DX12_CPU_DESCRIPTOR_HANDLE& handle,
+                       Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList);
+    std::vector<uint8_t> generateTextureData(int width, int height, int pixelSize);
 };

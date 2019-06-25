@@ -19,11 +19,12 @@ Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::wstring& filename,
 
     Microsoft::WRL::ComPtr<ID3DBlob> byteCode = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> errors;
-    CHECK(D3DCompileFromFile(filename.c_str(), defines, D3D_COMPILE_STANDARD_FILE_INCLUDE, entrypoint.c_str(), target.c_str(), compileFlags, 0, &byteCode, &errors));
+    HRESULT hr = D3DCompileFromFile(filename.c_str(), defines, D3D_COMPILE_STANDARD_FILE_INCLUDE, entrypoint.c_str(), target.c_str(), compileFlags, 0, &byteCode, &errors);
 
     if (errors != nullptr)
     {
         OutputDebugStringA((char*)errors->GetBufferPointer());
+        CHECK(hr);
     }
 
     return byteCode;

@@ -26,4 +26,10 @@ Microsoft::WRL::ComPtr<ID3D12Resource> createGPUBuffer(ID3D12Device* device,
                                                        const void* initData,
                                                        UINT64 byteSize,
                                                        Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer);
+
+template<typename T>
+UINT uintSize(const T& container)
+{
+    return static_cast<UINT>(container.size());
+}
 } // namespace fw

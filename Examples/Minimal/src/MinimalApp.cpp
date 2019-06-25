@@ -6,9 +6,7 @@
 #include <fw/Macros.h>
 #include <fw/Transformation.h>
 
-#include "d3dx12.h"
 #include <DirectXMath.h>
-#include <DirectXColors.h>
 
 #include <GLFW/glfw3.h>
 
@@ -20,20 +18,38 @@ namespace
 struct Vertex
 {
     DirectX::XMFLOAT3 position;
-    DirectX::XMFLOAT4 color;
+    DirectX::XMFLOAT2 uv;
 };
 
+// clang-format off
 std::vector<Vertex> vertices = {
-    Vertex({DirectX::XMFLOAT3(-1.0f, -1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::White)}),
-    Vertex({DirectX::XMFLOAT3(-1.0f, +1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::Black)}),
-    Vertex({DirectX::XMFLOAT3(+1.0f, +1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::Red)}),
-    Vertex({DirectX::XMFLOAT3(+1.0f, -1.0f, -1.0f), DirectX::XMFLOAT4(DirectX::Colors::Green)}),
-    Vertex({DirectX::XMFLOAT3(-1.0f, -1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Blue)}),
-    Vertex({DirectX::XMFLOAT3(-1.0f, +1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Yellow)}),
-    Vertex({DirectX::XMFLOAT3(+1.0f, +1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Cyan)}),
-    Vertex({DirectX::XMFLOAT3(+1.0f, -1.0f, +1.0f), DirectX::XMFLOAT4(DirectX::Colors::Magenta)})};
+	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
+	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)})};
+// clang-format on
 
-std::vector<uint16_t> indices = {0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 4, 5, 1, 4, 1, 0, 3, 2, 6, 3, 6, 7, 1, 5, 6, 1, 6, 2, 4, 0, 3, 4, 3, 7};
+std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16, 17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20};
 
 bool running = true;
 } // namespace
@@ -44,61 +60,36 @@ MinimalApp::~MinimalApp()
 
 bool MinimalApp::initialize()
 {
-    // Setup viewprt and scissor
-    int windowWidth = fw::API::getWindowWidth();
-    int windowHeight = fw::API::getWindowHeight();
-
-    m_screenViewport = {};
-    m_screenViewport.TopLeftX = 0;
-    m_screenViewport.TopLeftY = 0;
-    m_screenViewport.Width = static_cast<float>(windowWidth);
-    m_screenViewport.Height = static_cast<float>(windowHeight);
-    m_screenViewport.MinDepth = 0.0f;
-    m_screenViewport.MaxDepth = 1.0f;
-
-    m_scissorRect = {0, 0, windowWidth, windowHeight};
-
-    // Create descriptor heap
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-    cbvHeapDesc.NumDescriptors = fw::API::getSwapChainBufferCount();
-    cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    cbvHeapDesc.NodeMask = 0;
-    CHECK(d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&m_cbvHeap)));
-
-    // Create constant buffer
-    uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
-    m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
-
-    for (int i = 0; i < m_constantBuffers.size(); ++i)
-    {
-        Microsoft::WRL::ComPtr<ID3D12Resource>& constantBuffer = m_constantBuffers[i];
-        CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-                                                 D3D12_HEAP_FLAG_NONE,
-                                                 &CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize),
-                                                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                                                 nullptr,
-                                                 IID_PPV_ARGS(&constantBuffer)));
-
-        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-        cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
-        cbvDesc.SizeInBytes = constantBufferSize;
-
-        CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetCPUDescriptorHandleForHeapStart());
-        handle.Offset(i, fw::API::getCbvSrvUavDescriptorIncrementSize());
-
-        d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
-    }
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
     // Create root signature
-    CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
 
-    CD3DX12_DESCRIPTOR_RANGE cbvTable;
-    cbvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
-    slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable);
+    std::vector<CD3DX12_DESCRIPTOR_RANGE> cbvDescriptorRanges(1);
+    cbvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
+    rootParameters[0].InitAsDescriptorTable(fw::uintSize(cbvDescriptorRanges), cbvDescriptorRanges.data());
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(1, slotRootParameter, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
+    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    rootParameters[1].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
+
+    D3D12_STATIC_SAMPLER_DESC sampler{};
+    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    sampler.MipLODBias = 0;
+    sampler.MaxAnisotropy = 0;
+    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+    sampler.MinLOD = 0.0f;
+    sampler.MaxLOD = D3D12_FLOAT32_MAX;
+    sampler.ShaderRegister = 0;
+    sampler.RegisterSpace = 0;
+    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     Microsoft::WRL::ComPtr<ID3DBlob> serializedRootSig = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> errorBlob = nullptr;
@@ -114,6 +105,41 @@ bool MinimalApp::initialize()
                                          serializedRootSig->GetBufferSize(),
                                          IID_PPV_ARGS(&m_rootSignature)));
 
+    // Create CBV descriptor heap
+    D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
+    descriptorHeapDesc.NumDescriptors = fw::API::getSwapChainBufferCount() + 1; // +1 for texture
+    descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    descriptorHeapDesc.NodeMask = 0;
+    CHECK(d3dDevice->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&m_descriptorHeap)));
+
+    // Create constant buffer
+    uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
+    m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
+    for (int i = 0; i < m_constantBuffers.size(); ++i)
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource>& constantBuffer = m_constantBuffers[i];
+        CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+                                                 D3D12_HEAP_FLAG_NONE,
+                                                 &CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize),
+                                                 D3D12_RESOURCE_STATE_GENERIC_READ,
+                                                 nullptr,
+                                                 IID_PPV_ARGS(&constantBuffer)));
+
+        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+        cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
+        cbvDesc.SizeInBytes = constantBufferSize;
+
+        d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+        handle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    }
+
+    // Create texture
+    Microsoft::WRL::ComPtr<ID3D12Resource> uploadHeap = nullptr;
+    createTexture(uploadHeap, handle, commandList);
+
     // Create shaders
     std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
     shaderFile += L"simple.hlsl";
@@ -123,7 +149,7 @@ bool MinimalApp::initialize()
     // Set input layout
     std::vector<D3D12_INPUT_ELEMENT_DESC> vertexInputLayout = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
 
     // Create vertex input buffers
     const size_t vbByteSize = vertices.size() * sizeof(Vertex);
@@ -132,7 +158,6 @@ bool MinimalApp::initialize()
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
     m_vertexBufferGPU = fw::createGPUBuffer(d3dDevice.Get(),
                                             commandList.Get(),
                                             vertices.data(),
@@ -180,6 +205,20 @@ bool MinimalApp::initialize()
     m_cameraController.setCamera(&m_camera);
     m_camera.getTransformation().setPosition(0.0f, 1.0f, -10.0f);
 
+    // Setup viewprt and scissor
+    int windowWidth = fw::API::getWindowWidth();
+    int windowHeight = fw::API::getWindowHeight();
+
+    m_screenViewport = {};
+    m_screenViewport.TopLeftX = 0;
+    m_screenViewport.TopLeftY = 0;
+    m_screenViewport.Width = static_cast<float>(windowWidth);
+    m_screenViewport.Height = static_cast<float>(windowHeight);
+    m_screenViewport.MinDepth = 0.0f;
+    m_screenViewport.MaxDepth = 1.0f;
+
+    m_scissorRect = {0, 0, windowWidth, windowHeight};
+
     return true;
 }
 
@@ -225,18 +264,22 @@ void MinimalApp::update()
     commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
 
     // Draw commands
-    std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_cbvHeap.Get()};
+    std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
+    CD3DX12_GPU_DESCRIPTOR_HANDLE handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    handle.Offset(currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    commandList->SetGraphicsRootDescriptorTable(0, handle);
+
+    CD3DX12_GPU_DESCRIPTOR_HANDLE handle2 = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    handle2.Offset(2, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    commandList->SetGraphicsRootDescriptorTable(1, handle2);
+
     commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
     commandList->IASetIndexBuffer(&m_indexBufferView);
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    CD3DX12_GPU_DESCRIPTOR_HANDLE handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvHeap->GetGPUDescriptorHandleForHeapStart());
-    handle.Offset(currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
-    commandList->SetGraphicsRootDescriptorTable(0, handle);
 
     commandList->DrawIndexedInstanced((UINT)indices.size(), 1, 0, 0, 0);
 
@@ -252,4 +295,98 @@ void MinimalApp::update()
 
 void MinimalApp::onGUI()
 {
+}
+
+void MinimalApp::createTexture(Microsoft::WRL::ComPtr<ID3D12Resource>& uploadHeap,
+                               CD3DX12_CPU_DESCRIPTOR_HANDLE& handle,
+                               Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList)
+{
+    const int width = 256;
+    const int height = 256;
+    const int pixelSize = 4;
+    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
+
+    D3D12_RESOURCE_DESC textureDesc{};
+    textureDesc.MipLevels = 1;
+    textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    textureDesc.Width = width;
+    textureDesc.Height = height;
+    textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    textureDesc.DepthOrArraySize = 1;
+    textureDesc.SampleDesc.Count = 1;
+    textureDesc.SampleDesc.Quality = 0;
+    textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+    CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+                                             D3D12_HEAP_FLAG_NONE,
+                                             &textureDesc,
+                                             D3D12_RESOURCE_STATE_COPY_DEST,
+                                             nullptr,
+                                             IID_PPV_ARGS(&m_texture)));
+
+    m_texture->SetName(L"Texture");
+
+    const UINT64 uploadBufferSize = GetRequiredIntermediateSize(m_texture.Get(), 0, 1);
+
+    CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+                                             D3D12_HEAP_FLAG_NONE,
+                                             &CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize),
+                                             D3D12_RESOURCE_STATE_GENERIC_READ,
+                                             nullptr,
+                                             IID_PPV_ARGS(&uploadHeap)));
+
+    uploadHeap->SetName(L"TextureUploadHeap");
+
+    std::vector<uint8_t> texture = generateTextureData(width, height, pixelSize);
+
+    D3D12_SUBRESOURCE_DATA textureData{};
+    textureData.pData = &texture[0];
+    textureData.RowPitch = width * pixelSize;
+    textureData.SlicePitch = textureData.RowPitch * height;
+
+    UpdateSubresources(commandList.Get(), m_texture.Get(), uploadHeap.Get(), 0, 0, 1, &textureData);
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Format = textureDesc.Format;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    d3dDevice->CreateShaderResourceView(m_texture.Get(), &srvDesc, handle);
+}
+
+std::vector<uint8_t> MinimalApp::generateTextureData(int width, int height, int pixelSize)
+{
+    const int rowPitch = width * pixelSize;
+    const int cellPitch = rowPitch >> 3; // The width of a cell in the checkboard texture.
+    const int cellHeight = width >> 3; // The height of a cell in the checkerboard texture.
+    const int textureSize = rowPitch * height;
+
+    std::vector<uint8_t> data(textureSize);
+    uint8_t* pData = &data[0];
+
+    for (int n = 0; n < textureSize; n += pixelSize)
+    {
+        int x = n % rowPitch;
+        int y = n / rowPitch;
+        int i = x / cellPitch;
+        int j = y / cellHeight;
+
+        if (i % 2 == j % 2)
+        {
+            pData[n] = 0x00; // R
+            pData[n + 1] = 0x00; // G
+            pData[n + 2] = 0x00; // B
+            pData[n + 3] = 0xff; // A
+        }
+        else
+        {
+            pData[n] = 0xff; // R
+            pData[n + 1] = 0xff; // G
+            pData[n + 2] = 0xff; // B
+            pData[n + 3] = 0xff; // A
+        }
+    }
+
+    return data;
 }

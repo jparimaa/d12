@@ -6,26 +6,29 @@ cbuffer cbPerObject : register(b0)
 struct VertexIn
 {
 	float3 position : POSITION;
-    float4 color : COLOR;
+    float2 uv : TEXCOORD;
 };
 
 struct VertexOut
 {
 	float4 position : SV_POSITION;
-    float4 color : COLOR;
+    float2 uv : TEXCOORD;
 };
+
+Texture2D g_texture : register(t0);
+SamplerState g_sampler : register(s0);
 
 VertexOut VS(VertexIn vertexIn)
 {
 	VertexOut vertexOut;
 	vertexOut.position = mul(float4(vertexIn.position, 1.0f), worldViewProj);
-    vertexOut.color	 = vertexIn.color;    
+    vertexOut.uv = vertexIn.uv;    
     return vertexOut;
 }
 
 float4 PS(VertexOut vertexOut) : SV_Target
 {
-    return vertexOut.color;
+    return g_texture.Sample(g_sampler, vertexOut.uv);
 }
 
 
