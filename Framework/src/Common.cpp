@@ -44,29 +44,29 @@ std::wstring stringToWstring(const std::string& str)
 
 Microsoft::WRL::ComPtr<ID3D12Resource> createGPUBuffer(ID3D12Device* device,
                                                        ID3D12GraphicsCommandList* cmdList,
-                                                       const void* initData,
-                                                       UINT64 byteSize,
+                                                       const void* data,
+                                                       UINT64 size,
                                                        Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer)
 {
     Microsoft::WRL::ComPtr<ID3D12Resource> gpuBuffer;
 
     CHECK(device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
                                           D3D12_HEAP_FLAG_NONE,
-                                          &CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+                                          &CD3DX12_RESOURCE_DESC::Buffer(size),
                                           D3D12_RESOURCE_STATE_COMMON,
                                           nullptr,
                                           IID_PPV_ARGS(gpuBuffer.GetAddressOf())));
 
     CHECK(device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
                                           D3D12_HEAP_FLAG_NONE,
-                                          &CD3DX12_RESOURCE_DESC::Buffer(byteSize),
+                                          &CD3DX12_RESOURCE_DESC::Buffer(size),
                                           D3D12_RESOURCE_STATE_GENERIC_READ,
                                           nullptr,
                                           IID_PPV_ARGS(uploadBuffer.GetAddressOf())));
 
     D3D12_SUBRESOURCE_DATA subResourceData{};
-    subResourceData.pData = initData;
-    subResourceData.RowPitch = byteSize;
+    subResourceData.pData = data;
+    subResourceData.RowPitch = size;
     subResourceData.SlicePitch = subResourceData.RowPitch;
 
     cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(gpuBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST));
@@ -76,4 +76,47 @@ Microsoft::WRL::ComPtr<ID3D12Resource> createGPUBuffer(ID3D12Device* device,
     // Need to be kept alive until the data has been copied to GPU.
     return gpuBuffer;
 }
+
+Microsoft::WRL::ComPtr<ID3D12Resource> createGPUTexture(ID3D12Device* device,
+                                                        ID3D12GraphicsCommandList* cmdList,
+                                                        const void* data,
+                                                        UINT64 size,
+                                                        const D3D12_RESOURCE_DESC& textureDesc,
+                                                        int pixelSize,
+                                                        Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer,
+                                                        std::wstring name)
+{
+    Microsoft::WRL::ComPtr<ID3D12Resource> gpuTexture;
+
+    CHECK(device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+                                          D3D12_HEAP_FLAG_NONE,
+                                          &textureDesc,
+                                          D3D12_RESOURCE_STATE_COPY_DEST,
+                                          nullptr,
+                                          IID_PPV_ARGS(&gpuTexture)));
+
+    gpuTexture->SetName(name.c_str());
+
+    const UINT64 uploadBufferSize = GetRequiredIntermediateSize(gpuTexture.Get(), 0, 1);
+
+    CHECK(device->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+                                          D3D12_HEAP_FLAG_NONE,
+                                          &CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize),
+                                          D3D12_RESOURCE_STATE_GENERIC_READ,
+                                          nullptr,
+                                          IID_PPV_ARGS(&uploadBuffer)));
+
+    uploadBuffer->SetName(L"TextureUploadHeap");
+
+    D3D12_SUBRESOURCE_DATA textureData{};
+    textureData.pData = data;
+    textureData.RowPitch = textureDesc.Width * pixelSize;
+    textureData.SlicePitch = textureData.RowPitch * textureDesc.Height;
+
+    UpdateSubresources(cmdList, gpuTexture.Get(), uploadBuffer.Get(), 0, 0, 1, &textureData);
+    cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(gpuTexture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+
+    return gpuTexture;
+}
+
 } // namespace fw

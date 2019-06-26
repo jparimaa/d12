@@ -23,6 +23,7 @@ public:
 
     virtual bool initialize() final;
     virtual void update() final;
+    virtual void fillCommandList() final;
     virtual void onGUI() final;
 
 private:
@@ -38,8 +39,8 @@ private:
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBufferGPU;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBufferGPU;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBuffer;
 
     D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
     D3D12_INDEX_BUFFER_VIEW m_indexBufferView;
@@ -49,8 +50,5 @@ private:
     fw::Camera m_camera;
     fw::CameraController m_cameraController;
 
-    void createTexture(Microsoft::WRL::ComPtr<ID3D12Resource>& uploadHeap,
-                       CD3DX12_CPU_DESCRIPTOR_HANDLE& handle,
-                       Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList);
     std::vector<uint8_t> generateTextureData(int width, int height, int pixelSize);
 };

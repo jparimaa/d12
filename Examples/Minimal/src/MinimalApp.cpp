@@ -22,7 +22,7 @@ struct Vertex
 };
 
 // clang-format off
-std::vector<Vertex> vertices = {
+const std::vector<Vertex> vertices = {
 	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
 	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
 	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
@@ -49,9 +49,8 @@ std::vector<Vertex> vertices = {
 	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)})};
 // clang-format on
 
-std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16, 17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20};
+const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16, 17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20};
 
-bool running = true;
 } // namespace
 
 MinimalApp::~MinimalApp()
@@ -100,10 +99,7 @@ bool MinimalApp::initialize()
         OutputDebugStringA((char*)errorBlob->GetBufferPointer());
     }
 
-    CHECK(d3dDevice->CreateRootSignature(0,
-                                         serializedRootSig->GetBufferPointer(),
-                                         serializedRootSig->GetBufferSize(),
-                                         IID_PPV_ARGS(&m_rootSignature)));
+    CHECK(d3dDevice->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
 
     // Create CBV descriptor heap
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
@@ -137,8 +133,32 @@ bool MinimalApp::initialize()
     }
 
     // Create texture
-    Microsoft::WRL::ComPtr<ID3D12Resource> uploadHeap = nullptr;
-    createTexture(uploadHeap, handle, commandList);
+    const int width = 256;
+    const int height = 256;
+    const int pixelSize = 4;
+
+    D3D12_RESOURCE_DESC textureDesc{};
+    textureDesc.MipLevels = 1;
+    textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    textureDesc.Width = width;
+    textureDesc.Height = height;
+    textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    textureDesc.DepthOrArraySize = 1;
+    textureDesc.SampleDesc.Count = 1;
+    textureDesc.SampleDesc.Quality = 0;
+    textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+    std::vector<uint8_t> texture = generateTextureData(width, height, pixelSize);
+    Microsoft::WRL::ComPtr<ID3D12Resource> textureUploadBuffer = nullptr;
+
+    m_texture = fw::createGPUTexture(d3dDevice.Get(), commandList.Get(), texture.data(), texture.size(), textureDesc, 4, textureUploadBuffer);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Format = textureDesc.Format;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srvDesc.Texture2D.MipLevels = 1;
+    d3dDevice->CreateShaderResourceView(m_texture.Get(), &srvDesc, handle);
 
     // Create shaders
     std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
@@ -152,32 +172,23 @@ bool MinimalApp::initialize()
         {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
 
     // Create vertex input buffers
-    const size_t vbByteSize = vertices.size() * sizeof(Vertex);
-    const size_t ibByteSize = indices.size() * sizeof(uint16_t);
+    const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
+    const size_t indexBufferSize = indices.size() * sizeof(uint16_t);
 
     Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer = nullptr;
 
-    m_vertexBufferGPU = fw::createGPUBuffer(d3dDevice.Get(),
-                                            commandList.Get(),
-                                            vertices.data(),
-                                            vbByteSize,
-                                            vertexUploadBuffer);
-
-    m_indexBufferGPU = fw::createGPUBuffer(d3dDevice.Get(),
-                                           commandList.Get(),
-                                           indices.data(),
-                                           ibByteSize,
-                                           indexUploadBuffer);
+    m_vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, vertexUploadBuffer);
+    m_indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), indices.data(), indexBufferSize, indexUploadBuffer);
 
     // Create views of buffers
-    m_vertexBufferView.BufferLocation = m_vertexBufferGPU->GetGPUVirtualAddress();
+    m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
     m_vertexBufferView.StrideInBytes = sizeof(Vertex);
-    m_vertexBufferView.SizeInBytes = (UINT)vbByteSize;
+    m_vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
 
-    m_indexBufferView.BufferLocation = m_indexBufferGPU->GetGPUVirtualAddress();
+    m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
     m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    m_indexBufferView.SizeInBytes = (UINT)ibByteSize;
+    m_indexBufferView.SizeInBytes = (UINT)indexBufferSize;
 
     // Create PSO
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
@@ -205,7 +216,7 @@ bool MinimalApp::initialize()
     m_cameraController.setCamera(&m_camera);
     m_camera.getTransformation().setPosition(0.0f, 1.0f, -10.0f);
 
-    // Setup viewprt and scissor
+    // Setup viewport and scissor
     int windowWidth = fw::API::getWindowWidth();
     int windowHeight = fw::API::getWindowHeight();
 
@@ -241,7 +252,14 @@ void MinimalApp::update()
     memcpy(&mappedData[0], &wvp, sizeof(DirectX::XMMATRIX));
     m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 
-    // Rendering
+    if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
+    {
+        fw::API::quit();
+    }
+}
+
+void MinimalApp::fillCommandList()
+{
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator = fw::API::getCurrentFrameCommandAllocator();
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
@@ -263,14 +281,13 @@ void MinimalApp::update()
 
     commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
 
-    // Draw commands
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
     CD3DX12_GPU_DESCRIPTOR_HANDLE handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    handle.Offset(currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    handle.Offset(fw::API::getCurrentFrameIndex(), fw::API::getCbvSrvUavDescriptorIncrementSize());
     commandList->SetGraphicsRootDescriptorTable(0, handle);
 
     CD3DX12_GPU_DESCRIPTOR_HANDLE handle2 = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
@@ -286,73 +303,10 @@ void MinimalApp::update()
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
     CHECK(commandList->Close());
-
-    if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
-    {
-        fw::API::quit();
-    }
 }
 
 void MinimalApp::onGUI()
 {
-}
-
-void MinimalApp::createTexture(Microsoft::WRL::ComPtr<ID3D12Resource>& uploadHeap,
-                               CD3DX12_CPU_DESCRIPTOR_HANDLE& handle,
-                               Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList)
-{
-    const int width = 256;
-    const int height = 256;
-    const int pixelSize = 4;
-    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-
-    D3D12_RESOURCE_DESC textureDesc{};
-    textureDesc.MipLevels = 1;
-    textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    textureDesc.Width = width;
-    textureDesc.Height = height;
-    textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    textureDesc.DepthOrArraySize = 1;
-    textureDesc.SampleDesc.Count = 1;
-    textureDesc.SampleDesc.Quality = 0;
-    textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-
-    CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
-                                             D3D12_HEAP_FLAG_NONE,
-                                             &textureDesc,
-                                             D3D12_RESOURCE_STATE_COPY_DEST,
-                                             nullptr,
-                                             IID_PPV_ARGS(&m_texture)));
-
-    m_texture->SetName(L"Texture");
-
-    const UINT64 uploadBufferSize = GetRequiredIntermediateSize(m_texture.Get(), 0, 1);
-
-    CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-                                             D3D12_HEAP_FLAG_NONE,
-                                             &CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize),
-                                             D3D12_RESOURCE_STATE_GENERIC_READ,
-                                             nullptr,
-                                             IID_PPV_ARGS(&uploadHeap)));
-
-    uploadHeap->SetName(L"TextureUploadHeap");
-
-    std::vector<uint8_t> texture = generateTextureData(width, height, pixelSize);
-
-    D3D12_SUBRESOURCE_DATA textureData{};
-    textureData.pData = &texture[0];
-    textureData.RowPitch = width * pixelSize;
-    textureData.SlicePitch = textureData.RowPitch * height;
-
-    UpdateSubresources(commandList.Get(), m_texture.Get(), uploadHeap.Get(), 0, 0, 1, &textureData);
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_texture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
-
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = textureDesc.Format;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
-    d3dDevice->CreateShaderResourceView(m_texture.Get(), &srvDesc, handle);
 }
 
 std::vector<uint8_t> MinimalApp::generateTextureData(int width, int height, int pixelSize)

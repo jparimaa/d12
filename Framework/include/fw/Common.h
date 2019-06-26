@@ -27,6 +27,15 @@ Microsoft::WRL::ComPtr<ID3D12Resource> createGPUBuffer(ID3D12Device* device,
                                                        UINT64 byteSize,
                                                        Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer);
 
+Microsoft::WRL::ComPtr<ID3D12Resource> createGPUTexture(ID3D12Device* device,
+                                                        ID3D12GraphicsCommandList* cmdList,
+                                                        const void* data,
+                                                        UINT64 size,
+                                                        const D3D12_RESOURCE_DESC& textureDesc,
+                                                        int pixelSize,
+                                                        Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer,
+                                                        std::wstring name = L"Texture");
+
 template<typename T>
 UINT uintSize(const T& container)
 {

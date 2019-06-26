@@ -173,6 +173,7 @@ void Framework::execute()
         m_timeLastUpdate = std::chrono::steady_clock::now();
         waitForFrame(m_currentFrameIndex);
         m_app->update();
+        m_app->fillCommandList();
         render();
         m_window.clearKeyStatus();
     }
