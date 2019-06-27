@@ -49,6 +49,4 @@ private:
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;
-
-    std::vector<uint8_t> generateTextureData(int width, int height, int pixelSize);
 };

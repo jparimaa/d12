@@ -8,6 +8,8 @@
 
 #include <DirectXMath.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 #include <GLFW/glfw3.h>
 
 #include <vector>
@@ -133,25 +135,29 @@ bool MinimalApp::initialize()
     }
 
     // Create texture
-    const int width = 256;
-    const int height = 256;
-    const int pixelSize = 4;
+    std::string filepath = ROOT_PATH;
+    filepath += "Assets/checker.png";
+    int texWidth, texHeight, texChannels;
+    stbi_uc* pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, 4);
+    assert(pixels != nullptr);
+    const int numBytes = texWidth * texHeight * texChannels;
 
     D3D12_RESOURCE_DESC textureDesc{};
     textureDesc.MipLevels = 1;
     textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    textureDesc.Width = width;
-    textureDesc.Height = height;
     textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    textureDesc.Width = texWidth;
+    textureDesc.Height = texHeight;
     textureDesc.DepthOrArraySize = 1;
     textureDesc.SampleDesc.Count = 1;
     textureDesc.SampleDesc.Quality = 0;
     textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 
-    std::vector<uint8_t> texture = generateTextureData(width, height, pixelSize);
     Microsoft::WRL::ComPtr<ID3D12Resource> textureUploadBuffer = nullptr;
 
-    m_texture = fw::createGPUTexture(d3dDevice.Get(), commandList.Get(), texture.data(), texture.size(), textureDesc, 4, textureUploadBuffer);
+    m_texture = fw::createGPUTexture(d3dDevice.Get(), commandList.Get(), pixels, numBytes, textureDesc, 4, textureUploadBuffer);
+
+    stbi_image_free(pixels);
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -286,13 +292,13 @@ void MinimalApp::fillCommandList()
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE handle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    handle.Offset(fw::API::getCurrentFrameIndex(), fw::API::getCbvSrvUavDescriptorIncrementSize());
-    commandList->SetGraphicsRootDescriptorTable(0, handle);
+    CD3DX12_GPU_DESCRIPTOR_HANDLE constantBufferHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    constantBufferHandle.Offset(fw::API::getCurrentFrameIndex(), fw::API::getCbvSrvUavDescriptorIncrementSize());
+    commandList->SetGraphicsRootDescriptorTable(0, constantBufferHandle);
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE handle2 = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    handle2.Offset(2, fw::API::getCbvSrvUavDescriptorIncrementSize());
-    commandList->SetGraphicsRootDescriptorTable(1, handle2);
+    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    textureHandle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
+    commandList->SetGraphicsRootDescriptorTable(1, textureHandle);
 
     commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
     commandList->IASetIndexBuffer(&m_indexBufferView);
@@ -307,40 +313,4 @@ void MinimalApp::fillCommandList()
 
 void MinimalApp::onGUI()
 {
-}
-
-std::vector<uint8_t> MinimalApp::generateTextureData(int width, int height, int pixelSize)
-{
-    const int rowPitch = width * pixelSize;
-    const int cellPitch = rowPitch >> 3; // The width of a cell in the checkboard texture.
-    const int cellHeight = width >> 3; // The height of a cell in the checkerboard texture.
-    const int textureSize = rowPitch * height;
-
-    std::vector<uint8_t> data(textureSize);
-    uint8_t* pData = &data[0];
-
-    for (int n = 0; n < textureSize; n += pixelSize)
-    {
-        int x = n % rowPitch;
-        int y = n / rowPitch;
-        int i = x / cellPitch;
-        int j = y / cellHeight;
-
-        if (i % 2 == j % 2)
-        {
-            pData[n] = 0x00; // R
-            pData[n + 1] = 0x00; // G
-            pData[n + 2] = 0x00; // B
-            pData[n + 3] = 0xff; // A
-        }
-        else
-        {
-            pData[n] = 0xff; // R
-            pData[n + 1] = 0xff; // G
-            pData[n + 2] = 0xff; // B
-            pData[n + 3] = 0xff; // A
-        }
-    }
-
-    return data;
 }

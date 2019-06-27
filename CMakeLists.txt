@@ -32,9 +32,11 @@ function(ADD_PROJECT_WITH_DEFAULT_SETTINGS PROJECT_NAME)
     )
 
     target_compile_options(${PROJECT_NAME} PRIVATE /W3 /WX /MP)
-
+    
     add_definitions(-DSHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/shaders/")
 endfunction()
+
+add_definitions(-DROOT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/")
 
 add_subdirectory(Framework)
 add_subdirectory(Examples/Minimal)

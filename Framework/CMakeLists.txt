@@ -15,11 +15,14 @@ target_link_libraries(${LIBRARY_NAME}
         "${GLFW_PATH}/lib-vc2015/glfw3.lib"
 )
 
+set(STB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../External/stb/")
+
 target_include_directories(${LIBRARY_NAME}
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/fw"
         "${GLFW_PATH}/include"
+        "${STB_PATH}"
 )
 
 target_compile_features(${LIBRARY_NAME} 
