@@ -5,6 +5,7 @@
 #include <fw/API.h>
 #include <fw/Macros.h>
 #include <fw/Transformation.h>
+#include <fw/Model.h>
 
 #include <DirectXMath.h>
 
@@ -135,8 +136,8 @@ bool MinimalApp::initialize()
     }
 
     // Create texture
-    std::string filepath = ROOT_PATH;
-    filepath += "Assets/checker.png";
+    std::string filepath = ASSET_PATH;
+    filepath += "checker.png";
     int texWidth, texHeight, texChannels;
     stbi_uc* pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, 4);
     assert(pixels != nullptr);
@@ -235,6 +236,12 @@ bool MinimalApp::initialize()
     m_screenViewport.MaxDepth = 1.0f;
 
     m_scissorRect = {0, 0, windowWidth, windowHeight};
+
+    fw::Model model;
+    std::string modelFilepath = ASSET_PATH;
+    modelFilepath += "attack_droid.obj";
+    bool modelLoaded = model.loadModel(modelFilepath);
+    assert(modelLoaded);
 
     return true;
 }

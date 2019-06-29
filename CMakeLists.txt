@@ -9,6 +9,7 @@ if(NOT MSVC)
 endif()
 
 set(GLFW_PATH CACHE PATH "Path to GLFW")
+set(ASSIMP_PATH CACHE PATH "Path to assimp")
 
 function(ADD_PROJECT_WITH_DEFAULT_SETTINGS PROJECT_NAME)
     file(GLOB SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
@@ -34,9 +35,16 @@ function(ADD_PROJECT_WITH_DEFAULT_SETTINGS PROJECT_NAME)
     target_compile_options(${PROJECT_NAME} PRIVATE /W3 /WX /MP)
     
     add_definitions(-DSHADER_PATH="${CMAKE_CURRENT_SOURCE_DIR}/shaders/")
+
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ASSIMP_PATH}/bin/x64/assimp-vc140-mt.dll"
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        )
 endfunction()
 
 add_definitions(-DROOT_PATH="${CMAKE_CURRENT_SOURCE_DIR}/")
+add_definitions(-DASSET_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets/")
 
 add_subdirectory(Framework)
 add_subdirectory(Examples/Minimal)
