@@ -27,7 +27,7 @@ public:
     std::vector<DirectX::XMFLOAT3> normals;
     std::vector<DirectX::XMFLOAT3> tangents;
     std::vector<DirectX::XMFLOAT2> uvs;
-    std::vector<uint32_t> indices;
+    std::vector<uint16_t> indices;
     TextureNames textureNames;
 
     Mesh(){};

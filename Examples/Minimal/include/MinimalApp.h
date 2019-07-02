@@ -27,6 +27,22 @@ public:
     virtual void onGUI() final;
 
 private:
+    struct RenderObject
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer;
+        Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer;
+        D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+        D3D12_INDEX_BUFFER_VIEW indexBufferView;
+        Microsoft::WRL::ComPtr<ID3D12Resource> texture;
+        UINT numIndices;
+    };
+
+    struct UploadBuffers
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer;
+        Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer;
+    };
+
     D3D12_VIEWPORT m_screenViewport;
     D3D12_RECT m_scissorRect;
 
@@ -34,16 +50,11 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_descriptorHeap = nullptr;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_texture;
 
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexBuffer;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_indexBuffer;
-
-    D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
-    D3D12_INDEX_BUFFER_VIEW m_indexBufferView;
+    std::vector<RenderObject> m_renderObjects;
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_PSO = nullptr;
 

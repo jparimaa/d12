@@ -16,46 +16,6 @@
 #include <vector>
 #include <string>
 
-namespace
-{
-struct Vertex
-{
-    DirectX::XMFLOAT3 position;
-    DirectX::XMFLOAT2 uv;
-};
-
-// clang-format off
-const std::vector<Vertex> vertices = {
-	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3( 0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f, -0.5f), DirectX::XMFLOAT2(0.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f, -0.5f), DirectX::XMFLOAT2(1.0f, 1.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f, -0.5f,  0.5f), DirectX::XMFLOAT2(1.0f, 0.0f)}),
-	Vertex({DirectX::XMFLOAT3(-0.5f,  0.5f,  0.5f), DirectX::XMFLOAT2(0.0f, 0.0f)})};
-// clang-format on
-
-const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16, 17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20};
-
-} // namespace
-
 MinimalApp::~MinimalApp()
 {
 }
@@ -104,9 +64,18 @@ bool MinimalApp::initialize()
 
     CHECK(d3dDevice->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
 
+    // Load model
+    fw::Model model;
+    std::string modelFilepath = ASSET_PATH;
+    modelFilepath += "attack_droid.obj";
+    bool modelLoaded = model.loadModel(modelFilepath);
+    assert(modelLoaded);
+    const size_t numMeshes = model.getMeshes().size();
+    m_renderObjects.resize(numMeshes);
+
     // Create CBV descriptor heap
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
-    descriptorHeapDesc.NumDescriptors = fw::API::getSwapChainBufferCount() + 1; // +1 for texture
+    descriptorHeapDesc.NumDescriptors = fw::API::getSwapChainBufferCount() + static_cast<int>(numMeshes);
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     descriptorHeapDesc.NodeMask = 0;
@@ -136,36 +105,47 @@ bool MinimalApp::initialize()
     }
 
     // Create texture
-    std::string filepath = ASSET_PATH;
-    filepath += "checker.png";
-    int texWidth, texHeight, texChannels;
-    stbi_uc* pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, 4);
-    assert(pixels != nullptr);
-    const int numBytes = texWidth * texHeight * texChannels;
-
     D3D12_RESOURCE_DESC textureDesc{};
     textureDesc.MipLevels = 1;
     textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    textureDesc.Width = texWidth;
-    textureDesc.Height = texHeight;
+    textureDesc.Width = 0;
+    textureDesc.Height = 0;
     textureDesc.DepthOrArraySize = 1;
     textureDesc.SampleDesc.Count = 1;
     textureDesc.SampleDesc.Quality = 0;
     textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> textureUploadBuffer = nullptr;
+    const fw::Model::Meshes& meshes = model.getMeshes();
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> textureUploadBuffers(numMeshes);
 
-    m_texture = fw::createGPUTexture(d3dDevice.Get(), commandList.Get(), pixels, numBytes, textureDesc, 4, textureUploadBuffer);
+    for (size_t i = 0; i < numMeshes; ++i)
+    {
+        std::string textureName = meshes[i].getFirstTextureOfType(aiTextureType::aiTextureType_DIFFUSE);
+        std::string filepath = ASSET_PATH;
+        filepath += textureName;
+        int texWidth, texHeight, texChannels;
+        stbi_uc* pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, 4);
+        assert(pixels != nullptr);
 
-    stbi_image_free(pixels);
+        textureDesc.Width = texWidth;
+        textureDesc.Height = texHeight;
+        const int numBytes = texWidth * texHeight * texChannels;
 
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = textureDesc.Format;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
-    d3dDevice->CreateShaderResourceView(m_texture.Get(), &srvDesc, handle);
+        RenderObject& ro = m_renderObjects[i];
+        ro.texture = fw::createGPUTexture(d3dDevice.Get(), commandList.Get(), pixels, numBytes, textureDesc, 4, textureUploadBuffers[i]);
+
+        stbi_image_free(pixels);
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = textureDesc.Format;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Texture2D.MipLevels = 1;
+        d3dDevice->CreateShaderResourceView(ro.texture.Get(), &srvDesc, handle);
+
+        handle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    }
 
     // Create shaders
     std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
@@ -176,26 +156,34 @@ bool MinimalApp::initialize()
     // Set input layout
     std::vector<D3D12_INPUT_ELEMENT_DESC> vertexInputLayout = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+        {"NORMAL", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TANGENT", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
 
     // Create vertex input buffers
-    const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
-    const size_t indexBufferSize = indices.size() * sizeof(uint16_t);
+    std::vector<UploadBuffers> uploadBuffers(numMeshes);
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer = nullptr;
+    for (size_t i = 0; i < numMeshes; ++i)
+    {
+        RenderObject& ro = m_renderObjects[i];
+        const fw::Mesh& mesh = meshes[i];
+        std::vector<fw::Mesh::Vertex> vertices = mesh.getVertices();
+        const size_t vertexBufferSize = vertices.size() * sizeof(fw::Mesh::Vertex);
+        const size_t indexBufferSize = mesh.indices.size() * sizeof(uint16_t);
 
-    m_vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, vertexUploadBuffer);
-    m_indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), indices.data(), indexBufferSize, indexUploadBuffer);
+        ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, uploadBuffers[i].vertexUploadBuffer);
+        ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), mesh.indices.data(), indexBufferSize, uploadBuffers[i].indexUploadBuffer);
 
-    // Create views of buffers
-    m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
-    m_vertexBufferView.StrideInBytes = sizeof(Vertex);
-    m_vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
+        ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
+        ro.vertexBufferView.StrideInBytes = sizeof(fw::Mesh::Vertex);
+        ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
 
-    m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
-    m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    m_indexBufferView.SizeInBytes = (UINT)indexBufferSize;
+        ro.indexBufferView.BufferLocation = ro.indexBuffer->GetGPUVirtualAddress();
+        ro.indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+        ro.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
+
+        ro.numIndices = static_cast<UINT>(mesh.indices.size());
+    }
 
     // Create PSO
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
@@ -221,7 +209,7 @@ bool MinimalApp::initialize()
 
     // Camera
     m_cameraController.setCamera(&m_camera);
-    m_camera.getTransformation().setPosition(0.0f, 1.0f, -10.0f);
+    m_camera.getTransformation().setPosition(0.0f, 10.0f, -50.0f);
 
     // Setup viewport and scissor
     int windowWidth = fw::API::getWindowWidth();
@@ -236,12 +224,6 @@ bool MinimalApp::initialize()
     m_screenViewport.MaxDepth = 1.0f;
 
     m_scissorRect = {0, 0, windowWidth, windowHeight};
-
-    fw::Model model;
-    std::string modelFilepath = ASSET_PATH;
-    modelFilepath += "attack_droid.obj";
-    bool modelLoaded = model.loadModel(modelFilepath);
-    assert(modelLoaded);
 
     return true;
 }
@@ -303,15 +285,20 @@ void MinimalApp::fillCommandList()
     constantBufferHandle.Offset(fw::API::getCurrentFrameIndex(), fw::API::getCbvSrvUavDescriptorIncrementSize());
     commandList->SetGraphicsRootDescriptorTable(0, constantBufferHandle);
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    textureHandle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
-    commandList->SetGraphicsRootDescriptorTable(1, textureHandle);
-
-    commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
-    commandList->IASetIndexBuffer(&m_indexBufferView);
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    commandList->DrawIndexedInstanced((UINT)indices.size(), 1, 0, 0, 0);
+    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    textureHandle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+    for (const RenderObject& ro : m_renderObjects)
+    {
+        commandList->SetGraphicsRootDescriptorTable(1, textureHandle);
+        textureHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+        commandList->IASetVertexBuffers(0, 1, &ro.vertexBufferView);
+        commandList->IASetIndexBuffer(&ro.indexBufferView);
+        commandList->DrawIndexedInstanced(ro.numIndices, 1, 0, 0, 0);
+    }
 
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 

@@ -29,7 +29,7 @@ Mesh::Vertices Mesh::getVertices() const
 std::string Mesh::getFirstTextureOfType(aiTextureType type) const
 {
     auto typeIter = textureNames.find(type);
-    if (typeIter != textureNames.end() && typeIter->second.empty())
+    if (typeIter != textureNames.end() && !typeIter->second.empty())
     {
         return typeIter->second.front();
     }

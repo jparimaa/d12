@@ -52,7 +52,7 @@ bool Model::loadModel(const std::string& file)
                 if (aMesh->HasTextureCoords(0))
                 {
                     mesh.uvs.push_back(DirectX::XMFLOAT2(aMesh->mTextureCoords[0][vertexIndex].x,
-                                                         -aMesh->mTextureCoords[0][vertexIndex].y));
+                                                         1.0f - aMesh->mTextureCoords[0][vertexIndex].y));
                 }
             }
 
