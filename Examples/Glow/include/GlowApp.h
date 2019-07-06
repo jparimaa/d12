@@ -3,6 +3,7 @@
 #include <fw/Application.h>
 #include <fw/Camera.h>
 #include <fw/CameraController.h>
+#include <fw/Model.h>
 
 #include "d3dx12.h"
 #include <wrl.h>
@@ -37,7 +38,7 @@ private:
         UINT numIndices;
     };
 
-    struct UploadBuffers
+    struct VertexUploadBuffers
     {
         Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer;
         Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer;
@@ -51,13 +52,27 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_descriptorHeap = nullptr;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;
 
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_textureUploadBuffers;
+    std::vector<VertexUploadBuffers> m_vertexUploadBuffers;
+
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
 
     std::vector<RenderObject> m_renderObjects;
 
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_PSO = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_renderPSO = nullptr;
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;
+
+    void loadModel(fw::Model& model);
+    void createDescriptorHeap();
+    void createConstantBuffer();
+    void createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
+    void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
+    void createShaders();
+    void createRootSignature();
+    void createSingleColorPSO();
+    void createBlurPSO();
+    void createRenderPSO();
 };
