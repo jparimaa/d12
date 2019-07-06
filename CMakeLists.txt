@@ -48,3 +48,4 @@ add_definitions(-DASSET_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Assets/")
 
 add_subdirectory(Framework)
 add_subdirectory(Examples/Minimal)
+add_subdirectory(Examples/Glow)
