@@ -54,6 +54,11 @@ UINT API::getCbvSrvUavDescriptorIncrementSize()
     return s_framework->m_cbvSrvUavDescriptorIncrementSize;
 }
 
+UINT API::getRtvDescriptorIncrementSize()
+{
+    return s_framework->m_rtvDescriptorIncrementSize;
+}
+
 Microsoft::WRL::ComPtr<ID3D12CommandQueue> API::getCommandQueue()
 {
     return s_framework->m_commandQueue;

@@ -44,23 +44,34 @@ private:
         Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer;
     };
 
+    struct Shaders
+    {
+        Microsoft::WRL::ComPtr<ID3DBlob> vertexShader = nullptr;
+        Microsoft::WRL::ComPtr<ID3DBlob> pixelShader = nullptr;
+    };
+
     D3D12_VIEWPORT m_screenViewport;
     D3D12_RECT m_scissorRect;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature = nullptr;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_descriptorHeap = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_cbvSrvDescriptorHeap = nullptr;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;
+
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvDescriptorHeap = nullptr;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_singleColorTextures;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_singleColorSrvHeap = nullptr;
 
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_textureUploadBuffers;
     std::vector<VertexUploadBuffers> m_vertexUploadBuffers;
 
-    Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
-    Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
+    Shaders m_singleColorShaders;
+    Shaders m_finalRenderShaders;
 
     std::vector<RenderObject> m_renderObjects;
 
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_renderPSO = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_singleColorPSO = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_finalRenderPSO = nullptr;
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;
@@ -72,6 +83,7 @@ private:
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
     void createShaders();
     void createRootSignature();
+    void createRenderTarget();
     void createSingleColorPSO();
     void createBlurPSO();
     void createRenderPSO();
