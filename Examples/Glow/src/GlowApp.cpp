@@ -15,25 +15,14 @@
 #include <vector>
 #include <string>
 
-namespace
-{
-const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
-    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"NORMAL", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TANGENT", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-}
-
-GlowApp::~GlowApp()
-{
-}
-
 bool GlowApp::initialize()
 {
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
     fw::Model model;
     loadModel(model);
+
+    m_singleColorRenderer.initialize(&m_renderObjects);
 
     createDescriptorHeap();
     createConstantBuffer();
@@ -43,8 +32,6 @@ bool GlowApp::initialize()
     createShaders();
     createRootSignature();
 
-    createSingleColorPSO();
-    createBlurPSO();
     createRenderPSO();
 
     // Execute and wait initialization commands
@@ -105,13 +92,17 @@ void GlowApp::fillCommandList()
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
     CHECK(commandAllocator->Reset());
-    CHECK(commandList->Reset(commandAllocator.Get(), m_renderPSO.Get()));
+    CHECK(commandList->Reset(commandAllocator.Get(), nullptr));
 
     ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
     commandList->RSSetViewports(1, &m_screenViewport);
     commandList->RSSetScissorRects(1, &m_scissorRect);
+
+    m_singleColorRenderer.render(commandList, m_cbvSrvDescriptorHeap.Get());
+
+    commandList->SetPipelineState(m_finalRenderPSO.Get());
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
     const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
@@ -122,18 +113,18 @@ void GlowApp::fillCommandList()
 
     commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
 
-    std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
+    std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_cbvSrvDescriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE constantBufferHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    CD3DX12_GPU_DESCRIPTOR_HANDLE constantBufferHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
     constantBufferHandle.Offset(fw::API::getCurrentFrameIndex(), fw::API::getCbvSrvUavDescriptorIncrementSize());
     commandList->SetGraphicsRootDescriptorTable(0, constantBufferHandle);
 
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
     textureHandle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
 
     for (const RenderObject& ro : m_renderObjects)
@@ -175,7 +166,7 @@ void GlowApp::createDescriptorHeap()
     descriptorHeapDesc.NodeMask = 0;
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    CHECK(d3dDevice->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&m_descriptorHeap)));
+    CHECK(d3dDevice->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&m_cbvSrvDescriptorHeap)));
 }
 
 void GlowApp::createConstantBuffer()
@@ -185,7 +176,7 @@ void GlowApp::createConstantBuffer()
     uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
     m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
     for (int i = 0; i < m_constantBuffers.size(); ++i)
     {
         Microsoft::WRL::ComPtr<ID3D12Resource>& constantBuffer = m_constantBuffers[i];
@@ -224,7 +215,7 @@ void GlowApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D
     size_t numMeshes = meshes.size();
     m_textureUploadBuffers.resize(numMeshes);
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_cbvSrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
     handle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
 
     for (size_t i = 0; i < numMeshes; ++i)
@@ -289,10 +280,12 @@ void GlowApp::createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr
 
 void GlowApp::createShaders()
 {
-    std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
-    shaderFile += L"simple.hlsl";
-    m_vertexShader = fw::compileShader(shaderFile, nullptr, "VS", "vs_5_0");
-    m_pixelShader = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_0");
+    std::wstring shaderPath = fw::stringToWstring(std::string(SHADER_PATH));
+
+    std::wstring finalRenderShaderPath = shaderPath;
+    finalRenderShaderPath += L"finalRender.hlsl";
+    m_finalRenderShaders.vertexShader = fw::compileShader(finalRenderShaderPath, nullptr, "VS", "vs_5_0");
+    m_finalRenderShaders.pixelShader = fw::compileShader(finalRenderShaderPath, nullptr, "PS", "ps_5_0");
 }
 
 void GlowApp::createRootSignature()
@@ -337,21 +330,13 @@ void GlowApp::createRootSignature()
     CHECK(d3dDevice->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
 }
 
-void GlowApp::createSingleColorPSO()
-{
-}
-
-void GlowApp::createBlurPSO()
-{
-}
-
 void GlowApp::createRenderPSO()
 {
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
     psoDesc.InputLayout = {c_vertexInputLayout.data(), (UINT)c_vertexInputLayout.size()};
     psoDesc.pRootSignature = m_rootSignature.Get();
-    psoDesc.VS = {reinterpret_cast<BYTE*>(m_vertexShader->GetBufferPointer()), m_vertexShader->GetBufferSize()};
-    psoDesc.PS = {reinterpret_cast<BYTE*>(m_pixelShader->GetBufferPointer()), m_pixelShader->GetBufferSize()};
+    psoDesc.VS = {reinterpret_cast<BYTE*>(m_finalRenderShaders.vertexShader->GetBufferPointer()), m_finalRenderShaders.vertexShader->GetBufferSize()};
+    psoDesc.PS = {reinterpret_cast<BYTE*>(m_finalRenderShaders.pixelShader->GetBufferPointer()), m_finalRenderShaders.pixelShader->GetBufferSize()};
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -364,5 +349,5 @@ void GlowApp::createRenderPSO()
     psoDesc.DSVFormat = fw::API::getDepthStencilFormat();
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_renderPSO)));
+    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_finalRenderPSO)));
 }

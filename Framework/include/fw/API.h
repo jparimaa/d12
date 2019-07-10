@@ -33,6 +33,7 @@ public:
     static int getSwapChainBufferCount();
 
     static UINT getCbvSrvUavDescriptorIncrementSize();
+    static UINT getRtvDescriptorIncrementSize();
 
     static DXGI_FORMAT getBackBufferFormat();
     static DXGI_FORMAT getDepthStencilFormat();
