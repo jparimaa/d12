@@ -15,25 +15,14 @@
 #include <vector>
 #include <string>
 
-namespace
-{
-const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
-    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"NORMAL", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TANGENT", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-}
-
-GlowApp::~GlowApp()
-{
-}
-
 bool GlowApp::initialize()
 {
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
     fw::Model model;
     loadModel(model);
+
+    m_singleColorRenderer.initialize(&m_renderObjects);
 
     createDescriptorHeap();
     createConstantBuffer();
@@ -42,10 +31,7 @@ bool GlowApp::initialize()
 
     createShaders();
     createRootSignature();
-    createRenderTarget();
 
-    createSingleColorPSO();
-    createBlurPSO();
     createRenderPSO();
 
     // Execute and wait initialization commands
@@ -106,13 +92,17 @@ void GlowApp::fillCommandList()
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
     CHECK(commandAllocator->Reset());
-    CHECK(commandList->Reset(commandAllocator.Get(), m_finalRenderPSO.Get()));
+    CHECK(commandList->Reset(commandAllocator.Get(), nullptr));
 
     ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
     commandList->RSSetViewports(1, &m_screenViewport);
     commandList->RSSetScissorRects(1, &m_scissorRect);
+
+    m_singleColorRenderer.render(commandList, m_cbvSrvDescriptorHeap.Get());
+
+    commandList->SetPipelineState(m_finalRenderPSO.Get());
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
     const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
@@ -292,11 +282,6 @@ void GlowApp::createShaders()
 {
     std::wstring shaderPath = fw::stringToWstring(std::string(SHADER_PATH));
 
-    std::wstring singleColorShaderPath = shaderPath;
-    singleColorShaderPath += L"singleColor.hlsl";
-    m_singleColorShaders.vertexShader = fw::compileShader(singleColorShaderPath, nullptr, "VS", "vs_5_0");
-    m_singleColorShaders.pixelShader = fw::compileShader(singleColorShaderPath, nullptr, "PS", "ps_5_0");
-
     std::wstring finalRenderShaderPath = shaderPath;
     finalRenderShaderPath += L"finalRender.hlsl";
     m_finalRenderShaders.vertexShader = fw::compileShader(finalRenderShaderPath, nullptr, "VS", "vs_5_0");
@@ -343,119 +328,6 @@ void GlowApp::createRootSignature()
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
     CHECK(d3dDevice->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
-}
-
-void GlowApp::createRenderTarget()
-{
-    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    int swapChainSize = fw::API::getSwapChainBufferCount();
-
-    D3D12_RESOURCE_DESC resourceDesc{};
-    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-    resourceDesc.Alignment = 0;
-    resourceDesc.SampleDesc.Count = 1;
-    resourceDesc.SampleDesc.Quality = 0;
-    resourceDesc.MipLevels = 1;
-    resourceDesc.DepthOrArraySize = 1;
-    resourceDesc.Width = (UINT)fw::API::getWindowWidth();
-    resourceDesc.Height = (UINT)fw::API::getWindowHeight();
-    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-    resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-    resourceDesc.Format = fw::API::getBackBufferFormat();
-
-    float clearColor[4] = {0.0, 0.0f, 0.0f, 1.0f};
-
-    D3D12_CLEAR_VALUE clearValue{};
-    clearValue.Color[0] = clearColor[0];
-    clearValue.Color[1] = clearColor[1];
-    clearValue.Color[2] = clearColor[2];
-    clearValue.Color[3] = clearColor[3];
-    clearValue.Format = fw::API::getBackBufferFormat();
-
-    CD3DX12_HEAP_PROPERTIES heapProperty(D3D12_HEAP_TYPE_DEFAULT);
-    m_singleColorTextures.resize(swapChainSize);
-
-    for (int i = 0; i < swapChainSize; ++i)
-    {
-        CHECK(d3dDevice->CreateCommittedResource(&heapProperty,
-                                                 D3D12_HEAP_FLAG_NONE,
-                                                 &resourceDesc,
-                                                 D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                                 &clearValue,
-                                                 IID_PPV_ARGS(m_singleColorTextures[i].GetAddressOf())));
-    }
-
-    D3D12_DESCRIPTOR_HEAP_DESC rtvDescriptorHeapDesc{};
-    rtvDescriptorHeapDesc.NumDescriptors = swapChainSize;
-    rtvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-    rtvDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-    rtvDescriptorHeapDesc.NodeMask = 0;
-
-    CHECK(d3dDevice->CreateDescriptorHeap(&rtvDescriptorHeapDesc, IID_PPV_ARGS(&m_rtvDescriptorHeap)));
-
-    D3D12_RENDER_TARGET_VIEW_DESC renderTargetViewDesc{};
-    renderTargetViewDesc.Texture2D.MipSlice = 0;
-    renderTargetViewDesc.Texture2D.PlaneSlice = 0;
-    renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-    renderTargetViewDesc.Format = fw::API::getBackBufferFormat();
-
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-
-    for (int i = 0; i < swapChainSize; ++i)
-    {
-        d3dDevice->CreateRenderTargetView(m_singleColorTextures[i].Get(), &renderTargetViewDesc, rtvHandle);
-        rtvHandle.Offset(1, fw::API::getRtvDescriptorIncrementSize());
-    }
-
-    D3D12_DESCRIPTOR_HEAP_DESC srvDescriptorHeapDesc;
-    srvDescriptorHeapDesc.NumDescriptors = swapChainSize;
-    srvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    srvDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    srvDescriptorHeapDesc.NodeMask = 0;
-
-    CHECK(d3dDevice->CreateDescriptorHeap(&srvDescriptorHeapDesc, IID_PPV_ARGS(&m_singleColorSrvHeap)));
-
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-    srvDesc.Texture2D.MipLevels = resourceDesc.MipLevels;
-    srvDesc.Texture2D.MostDetailedMip = 0;
-    srvDesc.Format = resourceDesc.Format;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = fw::API::getBackBufferFormat();
-
-    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_singleColorSrvHeap->GetCPUDescriptorHandleForHeapStart());
-
-    for (int i = 0; i < swapChainSize; ++i)
-    {
-        d3dDevice->CreateShaderResourceView(m_singleColorTextures[i].Get(), &srvDesc, srvHandle);
-        srvHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
-    }
-}
-
-void GlowApp::createSingleColorPSO()
-{
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
-    psoDesc.InputLayout = {c_vertexInputLayout.data(), (UINT)c_vertexInputLayout.size()};
-    psoDesc.pRootSignature = m_rootSignature.Get();
-    psoDesc.VS = {reinterpret_cast<BYTE*>(m_singleColorShaders.vertexShader->GetBufferPointer()), m_singleColorShaders.vertexShader->GetBufferSize()};
-    psoDesc.PS = {reinterpret_cast<BYTE*>(m_singleColorShaders.pixelShader->GetBufferPointer()), m_singleColorShaders.pixelShader->GetBufferSize()};
-    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.SampleMask = UINT_MAX;
-    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = fw::API::getBackBufferFormat();
-    psoDesc.SampleDesc.Count = 1;
-    psoDesc.SampleDesc.Quality = 0;
-    psoDesc.DSVFormat = fw::API::getDepthStencilFormat();
-
-    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_singleColorPSO)));
-}
-
-void GlowApp::createBlurPSO()
-{
 }
 
 void GlowApp::createRenderPSO()
