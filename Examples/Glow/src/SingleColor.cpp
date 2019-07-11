@@ -3,11 +3,11 @@
 #include <fw/API.h>
 #include <fw/Common.h>
 
-bool SingleColor::initialize(const std::vector<RenderObject>* renderObjects)
+bool SingleColor::initialize(const std::vector<RenderObject>* renderObjects, ID3D12DescriptorHeap* srvHeap, int srvHeapOffset)
 {
     m_renderObjects = renderObjects;
 
-    createRenderTarget();
+    createRenderTarget(srvHeap, srvHeapOffset);
     createShaders();
     createRootSignature();
     createSingleColorPSO();
@@ -49,7 +49,7 @@ void SingleColor::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& comm
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_singleColorTextures[currentFrameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
 
-void SingleColor::createRenderTarget()
+void SingleColor::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvHeapOffset)
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
     int swapChainSize = fw::API::getSwapChainBufferCount();
@@ -113,15 +113,7 @@ void SingleColor::createRenderTarget()
         rtvHandle.Offset(1, fw::API::getRtvDescriptorIncrementSize());
     }
 
-    // Create SRV heap and shared resource views
-    D3D12_DESCRIPTOR_HEAP_DESC srvDescriptorHeapDesc;
-    srvDescriptorHeapDesc.NumDescriptors = swapChainSize;
-    srvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-    srvDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-    srvDescriptorHeapDesc.NodeMask = 0;
-
-    CHECK(d3dDevice->CreateDescriptorHeap(&srvDescriptorHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
-
+    // Create shared resource views
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Texture2D.MipLevels = resourceDesc.MipLevels;
     srvDesc.Texture2D.MostDetailedMip = 0;
@@ -130,7 +122,8 @@ void SingleColor::createRenderTarget()
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = fw::API::getBackBufferFormat();
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_srvHeap->GetCPUDescriptorHandleForHeapStart());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(srvHeap->GetCPUDescriptorHandleForHeapStart());
+    srvHandle.Offset(srvHeapOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
 
     for (int i = 0; i < swapChainSize; ++i)
     {

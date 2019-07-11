@@ -45,8 +45,6 @@ private:
 
     std::vector<RenderObject> m_renderObjects;
 
-    SingleColor m_singleColorRenderer;
-
     D3D12_VIEWPORT m_screenViewport;
     D3D12_RECT m_scissorRect;
 
@@ -60,6 +58,12 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature = nullptr;
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_finalRenderPSO = nullptr;
+
+    int m_constantBufferOffset = 0;
+    int m_albedoTextureOffset = 0;
+    int m_singleColorTextureOffset = 0;
+
+    SingleColor m_singleColorRenderer;
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;

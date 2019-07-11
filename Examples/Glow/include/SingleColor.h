@@ -13,7 +13,7 @@ public:
     SingleColor(){};
     ~SingleColor(){};
 
-    bool initialize(const std::vector<RenderObject>* renderObjects);
+    bool initialize(const std::vector<RenderObject>* renderObjects, ID3D12DescriptorHeap* srvHeap, int srvHeapOffset);
     void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* constantBufferHeap);
 
 private:
@@ -21,7 +21,6 @@ private:
 
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_singleColorTextures;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvHeap = nullptr;
 
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
@@ -30,7 +29,7 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_PSO = nullptr;
 
-    void createRenderTarget();
+    void createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvHeapOffset);
     void createShaders();
     void createRootSignature();
     void createSingleColorPSO();

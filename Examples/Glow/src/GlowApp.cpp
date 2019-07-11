@@ -22,7 +22,9 @@ bool GlowApp::initialize()
     fw::Model model;
     loadModel(model);
 
-    m_singleColorRenderer.initialize(&m_renderObjects);
+    m_constantBufferOffset = 0;
+    m_albedoTextureOffset = fw::API::getSwapChainBufferCount();
+    m_singleColorTextureOffset = fw::API::getSwapChainBufferCount() + static_cast<int>(m_renderObjects.size());
 
     createDescriptorHeap();
     createConstantBuffer();
@@ -33,6 +35,8 @@ bool GlowApp::initialize()
     createRootSignature();
 
     createRenderPSO();
+
+    m_singleColorRenderer.initialize(&m_renderObjects, m_cbvSrvDescriptorHeap.Get(), m_singleColorTextureOffset);
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -118,14 +122,22 @@ void GlowApp::fillCommandList()
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE constantBufferHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    constantBufferHandle.Offset(fw::API::getCurrentFrameIndex(), fw::API::getCbvSrvUavDescriptorIncrementSize());
+    int currentFrameIndex = fw::API::getCurrentFrameIndex();
+    UINT cbvSrvIncrementSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
+    CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvHandleBegin = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
+    CD3DX12_GPU_DESCRIPTOR_HANDLE constantBufferHandle = cbvSrvHandleBegin;
+    constantBufferHandle.Offset(m_constantBufferOffset + currentFrameIndex, cbvSrvIncrementSize);
     commandList->SetGraphicsRootDescriptorTable(0, constantBufferHandle);
+
+    CD3DX12_GPU_DESCRIPTOR_HANDLE singleColorTextureHandle = cbvSrvHandleBegin;
+    singleColorTextureHandle.Offset(m_singleColorTextureOffset + currentFrameIndex, cbvSrvIncrementSize);
+    commandList->SetGraphicsRootDescriptorTable(2, singleColorTextureHandle);
 
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_cbvSrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    textureHandle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
+    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = cbvSrvHandleBegin;
+    textureHandle.Offset(m_albedoTextureOffset, cbvSrvIncrementSize);
 
     for (const RenderObject& ro : m_renderObjects)
     {
@@ -160,7 +172,11 @@ void GlowApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
     size_t numMeshes = m_renderObjects.size();
-    descriptorHeapDesc.NumDescriptors = fw::API::getSwapChainBufferCount() + static_cast<int>(numMeshes);
+    int numDescriptors = (2 * fw::API::getSwapChainBufferCount()) + static_cast<int>(numMeshes);
+    // 0-1: CBV
+    // 2-3: Albedo
+    // 4-5: Single color input
+    descriptorHeapDesc.NumDescriptors = numDescriptors;
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     descriptorHeapDesc.NodeMask = 0;
@@ -290,15 +306,19 @@ void GlowApp::createShaders()
 
 void GlowApp::createRootSignature()
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(3);
 
     std::vector<CD3DX12_DESCRIPTOR_RANGE> cbvDescriptorRanges(1);
     cbvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
     rootParameters[0].InitAsDescriptorTable(fw::uintSize(cbvDescriptorRanges), cbvDescriptorRanges.data());
 
-    std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
-    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    rootParameters[1].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
+    std::vector<CD3DX12_DESCRIPTOR_RANGE> albedoTexture(1);
+    albedoTexture[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    rootParameters[1].InitAsDescriptorTable(fw::uintSize(albedoTexture), albedoTexture.data());
+
+    std::vector<CD3DX12_DESCRIPTOR_RANGE> singleColorTexture(1);
+    singleColorTexture[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    rootParameters[2].InitAsDescriptorTable(fw::uintSize(singleColorTexture), singleColorTexture.data());
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
