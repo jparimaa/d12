@@ -2,6 +2,7 @@
 
 #include "Shared.h"
 #include "SingleColor.h"
+#include "Blur.h"
 
 #include <fw/Application.h>
 #include <fw/Camera.h>
@@ -20,10 +21,6 @@ class GlowApp : public fw::Application
 public:
     GlowApp(){};
     virtual ~GlowApp(){};
-    GlowApp(const GlowApp&) = delete;
-    GlowApp(GlowApp&&) = delete;
-    GlowApp& operator=(const GlowApp&) = delete;
-    GlowApp& operator=(GlowApp&&) = delete;
 
     virtual bool initialize() final;
     virtual void update() final;
@@ -64,6 +61,7 @@ private:
     int m_singleColorTextureOffset = 0;
 
     SingleColor m_singleColorRenderer;
+    Blur m_blurRenderer;
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;

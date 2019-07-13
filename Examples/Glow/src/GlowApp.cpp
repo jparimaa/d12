@@ -37,12 +37,14 @@ bool GlowApp::initialize()
     createRenderPSO();
 
     m_singleColorRenderer.initialize(&m_renderObjects, m_cbvSrvDescriptorHeap.Get(), m_singleColorTextureOffset);
+    m_blurRenderer.initialize(commandList);
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
     fw::API::completeInitialization();
     m_textureUploadBuffers.clear();
     m_vertexUploadBuffers.clear();
+    m_blurRenderer.postInitialize();
 
     // Camera
     m_cameraController.setCamera(&m_camera);
