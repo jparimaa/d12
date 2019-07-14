@@ -19,10 +19,28 @@ void Blur::postInitialize()
     m_indexUploadBuffer.Reset();
 }
 
-void Blur::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
+void Blur::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int srvHeapOffset)
 {
     commandList->SetPipelineState(m_PSO.Get());
+
+    std::vector<ID3D12DescriptorHeap*> descriptorHeaps{srvHeap};
+    commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
+
+    commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+
+    UINT cbvSrvIncrementSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
+    CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvHandleBegin = CD3DX12_GPU_DESCRIPTOR_HANDLE(srvHeap->GetGPUDescriptorHandleForHeapStart());
+
+    CD3DX12_GPU_DESCRIPTOR_HANDLE singleColorTextureHandle = cbvSrvHandleBegin;
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
+    singleColorTextureHandle.Offset(srvHeapOffset + currentFrameIndex, cbvSrvIncrementSize);
+    commandList->SetGraphicsRootDescriptorTable(0, singleColorTextureHandle);
+
+    commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+    commandList->IASetIndexBuffer(&m_indexBufferView);
+    commandList->DrawIndexedInstanced(fw::uintSize(c_fullscreenTriangleIndices), 1, 0, 0, 0);
 }
 
 void Blur::createVertexBuffer(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
@@ -96,7 +114,7 @@ void Blur::createBlurPSO()
 {
     const std::vector<D3D12_INPUT_ELEMENT_DESC> vertexInputLayout = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
     psoDesc.InputLayout = {vertexInputLayout.data(), (UINT)vertexInputLayout.size()};

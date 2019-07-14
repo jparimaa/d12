@@ -13,7 +13,7 @@ public:
 
     bool initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
     void postInitialize();
-    void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
+    void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int srvHeapOffset);
 
 private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_vertexUploadBuffer;

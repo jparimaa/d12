@@ -70,7 +70,7 @@ bool GlowApp::initialize()
 void GlowApp::update()
 {
     static fw::Transformation transformation;
-    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
+    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), fw::API::getTimeDelta() * 0.1f);
     transformation.updateWorldMatrix();
 
     m_cameraController.update();
@@ -90,6 +90,8 @@ void GlowApp::update()
     {
         fw::API::quit();
     }
+
+    std::cout << fw::API::getTimeDelta() << "\n";
 }
 
 void GlowApp::fillCommandList()
@@ -103,12 +105,9 @@ void GlowApp::fillCommandList()
     ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
-    commandList->RSSetViewports(1, &m_screenViewport);
     commandList->RSSetScissorRects(1, &m_scissorRect);
 
     m_singleColorRenderer.render(commandList, m_cbvSrvDescriptorHeap.Get());
-
-    commandList->SetPipelineState(m_finalRenderPSO.Get());
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
     const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
@@ -117,7 +116,12 @@ void GlowApp::fillCommandList()
     D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = fw::API::getDepthStencilView();
     commandList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
+    commandList->RSSetViewports(1, &m_screenViewport);
     commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
+
+    m_blurRenderer.render(commandList, m_cbvSrvDescriptorHeap.Get(), m_singleColorTextureOffset);
+
+    commandList->SetPipelineState(m_finalRenderPSO.Get());
 
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_cbvSrvDescriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
@@ -131,10 +135,6 @@ void GlowApp::fillCommandList()
     CD3DX12_GPU_DESCRIPTOR_HANDLE constantBufferHandle = cbvSrvHandleBegin;
     constantBufferHandle.Offset(m_constantBufferOffset + currentFrameIndex, cbvSrvIncrementSize);
     commandList->SetGraphicsRootDescriptorTable(0, constantBufferHandle);
-
-    CD3DX12_GPU_DESCRIPTOR_HANDLE singleColorTextureHandle = cbvSrvHandleBegin;
-    singleColorTextureHandle.Offset(m_singleColorTextureOffset + currentFrameIndex, cbvSrvIncrementSize);
-    commandList->SetGraphicsRootDescriptorTable(2, singleColorTextureHandle);
 
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
@@ -308,7 +308,7 @@ void GlowApp::createShaders()
 
 void GlowApp::createRootSignature()
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(3);
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
 
     std::vector<CD3DX12_DESCRIPTOR_RANGE> cbvDescriptorRanges(1);
     cbvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
@@ -317,10 +317,6 @@ void GlowApp::createRootSignature()
     std::vector<CD3DX12_DESCRIPTOR_RANGE> albedoTexture(1);
     albedoTexture[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
     rootParameters[1].InitAsDescriptorTable(fw::uintSize(albedoTexture), albedoTexture.data());
-
-    std::vector<CD3DX12_DESCRIPTOR_RANGE> singleColorTexture(1);
-    singleColorTexture[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-    rootParameters[2].InitAsDescriptorTable(fw::uintSize(singleColorTexture), singleColorTexture.data());
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;

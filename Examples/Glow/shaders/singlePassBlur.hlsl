@@ -23,17 +23,19 @@ VertexOut VS(VertexIn vertexIn)
 
 float4 PS(VertexOut vertexOut) : SV_Target
 {
-    float texelHorizontal = 1.0 / 1200.0;
-    float texelVertical = 1.0 / 900.0;
+    float texelHorizontal = 1.0 / (1200.0 / 2.0);
+    float texelVertical = 1.0 / (900.0 / 2.0);
     float4 final = float4(0.0, 0.0, 0.0, 0.0);
-    for (int i = -2; i <= 2; ++i)
+    float weights[7] = {0.01, 0.015, 0.025, 0.04, 0.025, 0.015, 0.01};
+    int kernelSize = 3;
+    for (int i = -kernelSize; i <= kernelSize; ++i) // Slow single pass blur, more optimal way is to divide to horizontal and vertical blur
     {
-        for (int j = -2; j <= j; ++j)
+        for (int j = -kernelSize; j <= kernelSize; ++j)
         {
             float2 uv = vertexOut.uv;
             uv.x += i * texelHorizontal;
             uv.y += j * texelVertical;
-            g_texture.Sample(g_sampler, uv);
+            final += g_texture.Sample(g_sampler, uv) * (weights[i + kernelSize] + weights[j + kernelSize]);
         }
     }
     

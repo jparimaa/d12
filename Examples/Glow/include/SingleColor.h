@@ -17,6 +17,11 @@ public:
     void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* constantBufferHeap);
 
 private:
+    D3D12_VIEWPORT m_screenViewport;
+
+    UINT m_targetWidth = 0;
+    UINT m_targetHeight = 0;
+
     const std::vector<RenderObject>* m_renderObjects = nullptr;
 
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_singleColorTextures;

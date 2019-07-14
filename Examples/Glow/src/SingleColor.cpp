@@ -7,15 +7,29 @@ bool SingleColor::initialize(const std::vector<RenderObject>* renderObjects, ID3
 {
     m_renderObjects = renderObjects;
 
+    m_targetWidth = (UINT)fw::API::getWindowWidth() / 2;
+    m_targetHeight = (UINT)fw::API::getWindowHeight() / 2;
+
+    m_screenViewport = {};
+    m_screenViewport.TopLeftX = 0;
+    m_screenViewport.TopLeftY = 0;
+    m_screenViewport.Width = static_cast<float>(m_targetWidth);
+    m_screenViewport.Height = static_cast<float>(m_targetHeight);
+    m_screenViewport.MinDepth = 0.0f;
+    m_screenViewport.MaxDepth = 1.0f;
+
     createRenderTarget(srvHeap, srvHeapOffset);
     createShaders();
     createRootSignature();
     createSingleColorPSO();
+
     return true;
 }
 
 void SingleColor::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* constantBufferHeap)
 {
+    commandList->RSSetViewports(1, &m_screenViewport);
+
     commandList->SetPipelineState(m_PSO.Get());
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
 
@@ -62,8 +76,8 @@ void SingleColor::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvHeapO
     resourceDesc.SampleDesc.Quality = 0;
     resourceDesc.MipLevels = 1;
     resourceDesc.DepthOrArraySize = 1;
-    resourceDesc.Width = (UINT)fw::API::getWindowWidth();
-    resourceDesc.Height = (UINT)fw::API::getWindowHeight();
+    resourceDesc.Width = m_targetWidth;
+    resourceDesc.Height = m_targetHeight;
     resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
     resourceDesc.Format = fw::API::getBackBufferFormat();

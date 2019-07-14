@@ -18,7 +18,6 @@ struct VertexOut
 };
 
 Texture2D g_albedo : register(t0);
-Texture2D g_singleColor : register(t1);
 SamplerState g_sampler : register(s0);
 
 VertexOut VS(VertexIn vertexIn)
@@ -31,7 +30,7 @@ VertexOut VS(VertexIn vertexIn)
 
 float4 PS(VertexOut vertexOut) : SV_Target
 {
-    return g_albedo.Sample(g_sampler, vertexOut.uv) + (0.2 * g_singleColor.Sample(g_sampler, vertexOut.uv));
+    return g_albedo.Sample(g_sampler, vertexOut.uv);
 }
 
 
