@@ -24,10 +24,6 @@ const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
     {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
 }
 
-MinimalApp::~MinimalApp()
-{
-}
-
 bool MinimalApp::initialize()
 {
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
@@ -120,19 +116,15 @@ void MinimalApp::fillCommandList()
 
     commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
 
+    commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+    commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+    commandList->SetGraphicsRootConstantBufferView(0, m_constantBuffers[fw::API::getCurrentFrameIndex()]->GetGPUVirtualAddress());
+
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
-    commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-
-    CD3DX12_GPU_DESCRIPTOR_HANDLE constantBufferHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    constantBufferHandle.Offset(fw::API::getCurrentFrameIndex(), fw::API::getCbvSrvUavDescriptorIncrementSize());
-    commandList->SetGraphicsRootDescriptorTable(0, constantBufferHandle);
-
-    commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
     CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    textureHandle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
 
     for (const RenderObject& ro : m_renderObjects)
     {
@@ -167,7 +159,7 @@ void MinimalApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
     size_t numMeshes = m_renderObjects.size();
-    descriptorHeapDesc.NumDescriptors = fw::API::getSwapChainBufferCount() + static_cast<int>(numMeshes);
+    descriptorHeapDesc.NumDescriptors = static_cast<int>(numMeshes);
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     descriptorHeapDesc.NodeMask = 0;
@@ -183,7 +175,6 @@ void MinimalApp::createConstantBuffer()
     uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
     m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
     for (int i = 0; i < m_constantBuffers.size(); ++i)
     {
         Microsoft::WRL::ComPtr<ID3D12Resource>& constantBuffer = m_constantBuffers[i];
@@ -193,13 +184,6 @@ void MinimalApp::createConstantBuffer()
                                                  D3D12_RESOURCE_STATE_GENERIC_READ,
                                                  nullptr,
                                                  IID_PPV_ARGS(&constantBuffer)));
-
-        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-        cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
-        cbvDesc.SizeInBytes = constantBufferSize;
-
-        d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
-        handle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
     }
 }
 
@@ -223,7 +207,6 @@ void MinimalApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<I
     m_textureUploadBuffers.resize(numMeshes);
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
-    handle.Offset(fw::API::getSwapChainBufferCount(), fw::API::getCbvSrvUavDescriptorIncrementSize());
 
     for (size_t i = 0; i < numMeshes; ++i)
     {
@@ -296,10 +279,7 @@ void MinimalApp::createShaders()
 void MinimalApp::createRootSignature()
 {
     std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
-
-    std::vector<CD3DX12_DESCRIPTOR_RANGE> cbvDescriptorRanges(1);
-    cbvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
-    rootParameters[0].InitAsDescriptorTable(fw::uintSize(cbvDescriptorRanges), cbvDescriptorRanges.data());
+    rootParameters[0].InitAsConstantBufferView(0);
 
     std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
     srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);

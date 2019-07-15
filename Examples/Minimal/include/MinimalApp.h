@@ -16,11 +16,7 @@ class MinimalApp : public fw::Application
 {
 public:
     MinimalApp(){};
-    virtual ~MinimalApp();
-    MinimalApp(const MinimalApp&) = delete;
-    MinimalApp(MinimalApp&&) = delete;
-    MinimalApp& operator=(const MinimalApp&) = delete;
-    MinimalApp& operator=(MinimalApp&&) = delete;
+    virtual ~MinimalApp(){};
 
     virtual bool initialize() final;
     virtual void update() final;
