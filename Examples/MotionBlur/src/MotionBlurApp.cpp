@@ -1,4 +1,5 @@
 #include "MotionBlurApp.h"
+#include "Shared.h"
 
 #include <fw/Framework.h>
 #include <fw/Common.h>
@@ -8,8 +9,6 @@
 
 #include <DirectXMath.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 #include <GLFW/glfw3.h>
 
 #include <vector>
@@ -17,35 +16,31 @@
 
 namespace
 {
-const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
-    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"NORMAL", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TANGENT", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-}
+const int c_descriptorHeapSize = 1024;
+const int c_textureOffset = 0;
+const int c_srvOffset = 512;
+} // namespace
 
 bool MotionBlurApp::initialize()
 {
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
-    fw::Model model;
-    loadModel(model);
-
     createDescriptorHeap();
-    createConstantBuffer();
-    createTextures(model, commandList);
-    createVertexBuffers(model, commandList);
+    createVertexBuffers(commandList);
 
     createShaders();
     createRootSignature();
 
     createRenderPSO();
 
+    m_objectRender.initialize(commandList, m_descriptorHeap.Get(), c_textureOffset, c_srvOffset);
+
     // Execute and wait initialization commands
     CHECK(commandList->Close());
     fw::API::completeInitialization();
-    m_textureUploadBuffers.clear();
-    m_vertexUploadBuffers.clear();
+    m_vertexUploadBuffer.Reset();
+    m_indexUploadBuffer.Reset();
+    m_objectRender.postInitialize();
 
     // Camera
     m_cameraController.setCamera(&m_camera);
@@ -70,22 +65,9 @@ bool MotionBlurApp::initialize()
 
 void MotionBlurApp::update()
 {
-    static fw::Transformation transformation;
-    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
-    transformation.updateWorldMatrix();
-
+    m_objectRender.update(&m_camera);
     m_cameraController.update();
-
     m_camera.updateViewMatrix();
-
-    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
-    DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
-
-    int currentFrameIndex = fw::API::getCurrentFrameIndex();
-    char* mappedData = nullptr;
-    CHECK(m_constantBuffers[currentFrameIndex]->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
-    memcpy(&mappedData[0], &wvp, sizeof(DirectX::XMMATRIX));
-    m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
     {
@@ -99,13 +81,17 @@ void MotionBlurApp::fillCommandList()
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
     CHECK(commandAllocator->Reset());
-    CHECK(commandList->Reset(commandAllocator.Get(), m_renderPSO.Get()));
-
-    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+    CHECK(commandList->Reset(commandAllocator.Get(), nullptr));
 
     commandList->RSSetViewports(1, &m_screenViewport);
     commandList->RSSetScissorRects(1, &m_scissorRect);
+
+    m_objectRender.render(commandList);
+
+    commandList->SetPipelineState(m_PSO.Get());
+
+    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
     const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
@@ -114,27 +100,22 @@ void MotionBlurApp::fillCommandList()
     D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = fw::API::getDepthStencilView();
     commandList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
+    commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
 
-    commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-    commandList->SetGraphicsRootConstantBufferView(0, m_constantBuffers[fw::API::getCurrentFrameIndex()]->GetGPUVirtualAddress());
 
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    srvHandle.Offset(c_srvOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
 
-    for (const RenderObject& ro : m_renderObjects)
-    {
-        commandList->SetGraphicsRootDescriptorTable(1, textureHandle);
-        textureHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    commandList->SetGraphicsRootDescriptorTable(0, srvHandle);
 
-        commandList->IASetVertexBuffers(0, 1, &ro.vertexBufferView);
-        commandList->IASetIndexBuffer(&ro.indexBufferView);
-        commandList->DrawIndexedInstanced(ro.numIndices, 1, 0, 0, 0);
-    }
+    commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+    commandList->IASetIndexBuffer(&m_indexBufferView);
+    commandList->DrawIndexedInstanced(fw::uintSize(c_fullscreenTriangleIndices), 1, 0, 0, 0);
 
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
@@ -145,21 +126,10 @@ void MotionBlurApp::onGUI()
 {
 }
 
-void MotionBlurApp::loadModel(fw::Model& model)
-{
-    std::string modelFilepath = ASSET_PATH;
-    modelFilepath += "attack_droid.obj";
-    bool modelLoaded = model.loadModel(modelFilepath);
-    assert(modelLoaded);
-    const size_t numMeshes = model.getMeshes().size();
-    m_renderObjects.resize(numMeshes);
-}
-
 void MotionBlurApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
-    size_t numMeshes = m_renderObjects.size();
-    descriptorHeapDesc.NumDescriptors = static_cast<int>(numMeshes);
+    descriptorHeapDesc.NumDescriptors = c_descriptorHeapSize;
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     descriptorHeapDesc.NodeMask = 0;
@@ -168,122 +138,40 @@ void MotionBlurApp::createDescriptorHeap()
     CHECK(d3dDevice->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&m_descriptorHeap)));
 }
 
-void MotionBlurApp::createConstantBuffer()
+void MotionBlurApp::createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
-    uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
-    m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
+    const size_t vertexBufferSize = c_fullscreenTriangle.size() * sizeof(float);
+    const size_t indexBufferSize = c_fullscreenTriangleIndices.size() * sizeof(uint16_t);
 
-    for (int i = 0; i < m_constantBuffers.size(); ++i)
-    {
-        Microsoft::WRL::ComPtr<ID3D12Resource>& constantBuffer = m_constantBuffers[i];
-        CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
-                                                 D3D12_HEAP_FLAG_NONE,
-                                                 &CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize),
-                                                 D3D12_RESOURCE_STATE_GENERIC_READ,
-                                                 nullptr,
-                                                 IID_PPV_ARGS(&constantBuffer)));
-    }
-}
+    m_vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), c_fullscreenTriangle.data(), vertexBufferSize, m_vertexUploadBuffer);
+    m_indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), c_fullscreenTriangleIndices.data(), indexBufferSize, m_indexUploadBuffer);
 
-void MotionBlurApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
-{
-    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
+    m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
+    m_vertexBufferView.StrideInBytes = sizeof(float) * 5;
+    m_vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
 
-    D3D12_RESOURCE_DESC textureDesc{};
-    textureDesc.MipLevels = 1;
-    textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-    textureDesc.Width = 0;
-    textureDesc.Height = 0;
-    textureDesc.DepthOrArraySize = 1;
-    textureDesc.SampleDesc.Count = 1;
-    textureDesc.SampleDesc.Quality = 0;
-    textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-
-    const fw::Model::Meshes& meshes = model.getMeshes();
-    size_t numMeshes = meshes.size();
-    m_textureUploadBuffers.resize(numMeshes);
-
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
-
-    for (size_t i = 0; i < numMeshes; ++i)
-    {
-        std::string textureName = meshes[i].getFirstTextureOfType(aiTextureType::aiTextureType_DIFFUSE);
-        std::string filepath = ASSET_PATH;
-        filepath += textureName;
-        int texWidth, texHeight, texChannels;
-        stbi_uc* pixels = stbi_load(filepath.c_str(), &texWidth, &texHeight, &texChannels, 4);
-        assert(pixels != nullptr);
-
-        textureDesc.Width = texWidth;
-        textureDesc.Height = texHeight;
-        const int numBytes = texWidth * texHeight * texChannels;
-
-        RenderObject& ro = m_renderObjects[i];
-        ro.texture = fw::createGPUTexture(d3dDevice.Get(), commandList.Get(), pixels, numBytes, textureDesc, 4, m_textureUploadBuffers[i]);
-
-        stbi_image_free(pixels);
-
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Format = textureDesc.Format;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Texture2D.MipLevels = 1;
-        d3dDevice->CreateShaderResourceView(ro.texture.Get(), &srvDesc, handle);
-
-        handle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
-    }
-}
-
-void MotionBlurApp::createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
-{
-    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-
-    const fw::Model::Meshes& meshes = model.getMeshes();
-    size_t numMeshes = meshes.size();
-    m_vertexUploadBuffers.resize(numMeshes);
-
-    for (size_t i = 0; i < numMeshes; ++i)
-    {
-        RenderObject& ro = m_renderObjects[i];
-        const fw::Mesh& mesh = meshes[i];
-        std::vector<fw::Mesh::Vertex> vertices = mesh.getVertices();
-        const size_t vertexBufferSize = vertices.size() * sizeof(fw::Mesh::Vertex);
-        const size_t indexBufferSize = mesh.indices.size() * sizeof(uint16_t);
-
-        ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[i].vertexUploadBuffer);
-        ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), mesh.indices.data(), indexBufferSize, m_vertexUploadBuffers[i].indexUploadBuffer);
-
-        ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
-        ro.vertexBufferView.StrideInBytes = sizeof(fw::Mesh::Vertex);
-        ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
-
-        ro.indexBufferView.BufferLocation = ro.indexBuffer->GetGPUVirtualAddress();
-        ro.indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-        ro.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
-
-        ro.numIndices = static_cast<UINT>(mesh.indices.size());
-    }
+    m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
+    m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    m_indexBufferView.SizeInBytes = (UINT)indexBufferSize;
 }
 
 void MotionBlurApp::createShaders()
 {
     std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
-    shaderFile += L"simple.hlsl";
+    shaderFile += L"motionBlur.hlsl";
     m_vertexShader = fw::compileShader(shaderFile, nullptr, "VS", "vs_5_0");
     m_pixelShader = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_0");
 }
 
 void MotionBlurApp::createRootSignature()
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
-    rootParameters[0].InitAsConstantBufferView(0);
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(1);
 
     std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
-    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    rootParameters[1].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
+    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
+    rootParameters[0].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
@@ -317,8 +205,12 @@ void MotionBlurApp::createRootSignature()
 
 void MotionBlurApp::createRenderPSO()
 {
+    const std::vector<D3D12_INPUT_ELEMENT_DESC> vertexInputLayout = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
-    psoDesc.InputLayout = {c_vertexInputLayout.data(), (UINT)c_vertexInputLayout.size()};
+    psoDesc.InputLayout = {vertexInputLayout.data(), (UINT)vertexInputLayout.size()};
     psoDesc.pRootSignature = m_rootSignature.Get();
     psoDesc.VS = {reinterpret_cast<BYTE*>(m_vertexShader->GetBufferPointer()), m_vertexShader->GetBufferSize()};
     psoDesc.PS = {reinterpret_cast<BYTE*>(m_pixelShader->GetBufferPointer()), m_pixelShader->GetBufferSize()};
@@ -334,5 +226,5 @@ void MotionBlurApp::createRenderPSO()
     psoDesc.DSVFormat = fw::API::getDepthStencilFormat();
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_renderPSO)));
+    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PSO)));
 }
