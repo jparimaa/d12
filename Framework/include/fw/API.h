@@ -34,6 +34,7 @@ public:
 
     static UINT getCbvSrvUavDescriptorIncrementSize();
     static UINT getRtvDescriptorIncrementSize();
+    static UINT getDsvDescriptorIncrementSize();
 
     static DXGI_FORMAT getBackBufferFormat();
     static DXGI_FORMAT getDepthStencilFormat();

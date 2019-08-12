@@ -7,6 +7,11 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+namespace
+{
+const float c_clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+}
+
 bool ObjectRender::initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int textureOffset, int srvOffset)
 {
     m_srvHeap = srvHeap;
@@ -36,7 +41,7 @@ void ObjectRender::postInitialize()
 void ObjectRender::update(fw::Camera* camera)
 {
     static fw::Transformation transformation;
-    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
+    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.4f * fw::API::getTimeDelta());
     transformation.updateWorldMatrix();
 
     DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * camera->getViewMatrix() * camera->getProjectionMatrix();
@@ -54,15 +59,16 @@ void ObjectRender::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& com
     commandList->SetPipelineState(m_PSO.Get());
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
 
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_objectRenderTextures[currentFrameIndex].Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET));
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_objectRenderTexture.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), currentFrameIndex, fw::API::getRtvDescriptorIncrementSize());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+    commandList->ClearRenderTargetView(rtvHandle, c_clearColor, 0, nullptr);
 
-    const static float clearColor[4] = {0.0f, 0.2f, 0.0f, 1.0f};
-    commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    commandList->OMSetRenderTargets(1, &rtvHandle, true, nullptr);
+    commandList->OMSetRenderTargets(1, &rtvHandle, true, &dsvHandle);
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
     commandList->SetGraphicsRootConstantBufferView(0, m_constantBuffers[fw::API::getCurrentFrameIndex()]->GetGPUVirtualAddress());
@@ -83,7 +89,7 @@ void ObjectRender::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& com
         commandList->DrawIndexedInstanced(ro.numIndices, 1, 0, 0, 0);
     }
 
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_objectRenderTextures[currentFrameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_objectRenderTexture.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
 
 void ObjectRender::loadModel(fw::Model& model)
@@ -201,7 +207,7 @@ void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
-    // Create texture resources
+    // Create render texture resources
     UINT windowWidth = static_cast<UINT>(fw::API::getWindowWidth());
     UINT windowHeight = static_cast<UINT>(fw::API::getWindowHeight());
 
@@ -218,38 +224,53 @@ void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
     resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
     resourceDesc.Format = fw::API::getBackBufferFormat();
 
-    float clearColor[4] = {0.0, 0.0f, 0.0f, 1.0f};
-
     D3D12_CLEAR_VALUE clearValue{};
-    clearValue.Color[0] = clearColor[0];
-    clearValue.Color[1] = clearColor[1];
-    clearValue.Color[2] = clearColor[2];
-    clearValue.Color[3] = clearColor[3];
+    clearValue.Color[0] = c_clearColor[0];
+    clearValue.Color[1] = c_clearColor[1];
+    clearValue.Color[2] = c_clearColor[2];
+    clearValue.Color[3] = c_clearColor[3];
     clearValue.Format = fw::API::getBackBufferFormat();
 
     CD3DX12_HEAP_PROPERTIES heapProperty(D3D12_HEAP_TYPE_DEFAULT);
-    int swapChainSize = fw::API::getSwapChainBufferCount();
-    m_objectRenderTextures.resize(swapChainSize);
 
-    for (int i = 0; i < swapChainSize; ++i)
-    {
-        CHECK(d3dDevice->CreateCommittedResource(&heapProperty,
-                                                 D3D12_HEAP_FLAG_NONE,
-                                                 &resourceDesc,
-                                                 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-                                                 &clearValue,
-                                                 IID_PPV_ARGS(m_objectRenderTextures[i].GetAddressOf())));
-    }
+    CHECK(d3dDevice->CreateCommittedResource(&heapProperty,
+                                             D3D12_HEAP_FLAG_NONE,
+                                             &resourceDesc,
+                                             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                             &clearValue,
+                                             IID_PPV_ARGS(m_objectRenderTexture.GetAddressOf())));
 
-    // Create RTV heap and render target views
+    // Create depth texture resource
+    resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    resourceDesc.Format = fw::API::getDepthStencilFormat();
+    clearValue.Format = fw::API::getDepthStencilFormat();
+    clearValue.DepthStencil.Depth = 1.0f;
+
+    CHECK(d3dDevice->CreateCommittedResource(&heapProperty,
+                                             D3D12_HEAP_FLAG_NONE,
+                                             &resourceDesc,
+                                             D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                                             &clearValue,
+                                             IID_PPV_ARGS(m_depthStencilTexture.GetAddressOf())));
+
+    // Create RTV and DSV heap
     D3D12_DESCRIPTOR_HEAP_DESC rtvDescriptorHeapDesc{};
-    rtvDescriptorHeapDesc.NumDescriptors = swapChainSize;
+    rtvDescriptorHeapDesc.NumDescriptors = 1;
     rtvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     rtvDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     rtvDescriptorHeapDesc.NodeMask = 0;
 
     CHECK(d3dDevice->CreateDescriptorHeap(&rtvDescriptorHeapDesc, IID_PPV_ARGS(&m_rtvHeap)));
 
+    D3D12_DESCRIPTOR_HEAP_DESC dsvDescriptorHeapDesc{};
+    dsvDescriptorHeapDesc.NumDescriptors = 1;
+    dsvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    dsvDescriptorHeapDesc.NodeMask = 0;
+
+    CHECK(d3dDevice->CreateDescriptorHeap(&dsvDescriptorHeapDesc, IID_PPV_ARGS(&m_dsvHeap)));
+
+    // Create views
     D3D12_RENDER_TARGET_VIEW_DESC renderTargetViewDesc{};
     renderTargetViewDesc.Texture2D.MipSlice = 0;
     renderTargetViewDesc.Texture2D.PlaneSlice = 0;
@@ -257,18 +278,22 @@ void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
     renderTargetViewDesc.Format = fw::API::getBackBufferFormat();
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+    d3dDevice->CreateRenderTargetView(m_objectRenderTexture.Get(), &renderTargetViewDesc, rtvHandle);
 
-    for (int i = 0; i < swapChainSize; ++i)
-    {
-        d3dDevice->CreateRenderTargetView(m_objectRenderTextures[i].Get(), &renderTargetViewDesc, rtvHandle);
-        rtvHandle.Offset(1, fw::API::getRtvDescriptorIncrementSize());
-    }
+    D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc{};
+    depthStencilViewDesc.Texture2D.MipSlice = 0;
+    depthStencilViewDesc.Format = fw::API::getDepthStencilFormat();
+    depthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    depthStencilViewDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+    d3dDevice->CreateDepthStencilView(m_depthStencilTexture.Get(), &depthStencilViewDesc, dsvHandle);
 
     // Create shader resource views
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Texture2D.MipLevels = resourceDesc.MipLevels;
     srvDesc.Texture2D.MostDetailedMip = 0;
-    srvDesc.Format = resourceDesc.Format;
+    srvDesc.Format = fw::API::getBackBufferFormat();
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = fw::API::getBackBufferFormat();
@@ -276,11 +301,11 @@ void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
     CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(srvHeap->GetCPUDescriptorHandleForHeapStart());
     srvHandle.Offset(srvOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
 
-    for (int i = 0; i < swapChainSize; ++i)
-    {
-        d3dDevice->CreateShaderResourceView(m_objectRenderTextures[i].Get(), &srvDesc, srvHandle);
-        srvHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
-    }
+    d3dDevice->CreateShaderResourceView(m_objectRenderTexture.Get(), &srvDesc, srvHandle);
+    srvHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+    srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+    d3dDevice->CreateShaderResourceView(m_depthStencilTexture.Get(), &srvDesc, srvHandle);
 }
 
 void ObjectRender::createShaders()
@@ -348,15 +373,13 @@ void ObjectRender::createObjectRenderPSO()
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    psoDesc.DepthStencilState.DepthEnable = false;
-    psoDesc.DepthStencilState.StencilEnable = false;
     psoDesc.SampleMask = UINT_MAX;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.NumRenderTargets = 1;
     psoDesc.RTVFormats[0] = fw::API::getBackBufferFormat();
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
-    psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+    psoDesc.DSVFormat = fw::API::getDepthStencilFormat();
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
     CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PSO)));

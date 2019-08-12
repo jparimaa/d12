@@ -51,8 +51,11 @@ private:
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_textureUploadBuffers;
     std::vector<VertexUploadBuffers> m_vertexUploadBuffers;
 
-    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_objectRenderTextures;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_objectRenderTexture;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_depthStencilTexture;
+
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_dsvHeap = nullptr;
 
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
