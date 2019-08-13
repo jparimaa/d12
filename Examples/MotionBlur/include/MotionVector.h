@@ -19,7 +19,7 @@ public:
                     int srvOffset);
     void postInitialize();
     void update(fw::Camera* camera);
-    void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
+    void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int depthOffset);
 
 private:
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;

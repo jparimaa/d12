@@ -18,7 +18,8 @@ namespace
 {
 const int c_descriptorHeapSize = 2048;
 const int c_albedoTextureOffset = 0;
-const int c_renderObjectTextureOffset = 512;
+const int c_renderTextureOffset = 512;
+const int c_renderDepthOffset = 513;
 const int c_motionVectorTextureOffset = 1024;
 } // namespace
 
@@ -34,7 +35,7 @@ bool MotionBlurApp::initialize()
 
     createRenderPSO();
 
-    m_objectRender.initialize(commandList, m_descriptorHeap.Get(), c_albedoTextureOffset, c_renderObjectTextureOffset);
+    m_objectRender.initialize(commandList, m_descriptorHeap.Get(), c_albedoTextureOffset, c_renderTextureOffset, c_renderDepthOffset);
     m_motionVector.initialize(commandList, m_descriptorHeap.Get(), c_motionVectorTextureOffset);
 
     // Execute and wait initialization commands
@@ -91,7 +92,7 @@ void MotionBlurApp::fillCommandList()
     commandList->RSSetScissorRects(1, &m_scissorRect);
 
     m_objectRender.render(commandList);
-    m_motionVector.render(commandList);
+    m_motionVector.render(commandList, m_descriptorHeap.Get(), c_renderDepthOffset);
 
     commandList->SetPipelineState(m_PSO.Get());
 
@@ -114,7 +115,7 @@ void MotionBlurApp::fillCommandList()
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
     CD3DX12_GPU_DESCRIPTOR_HANDLE objectTextureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    objectTextureHandle.Offset(c_renderObjectTextureOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    objectTextureHandle.Offset(c_renderTextureOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
 
     commandList->SetGraphicsRootDescriptorTable(0, objectTextureHandle);
 

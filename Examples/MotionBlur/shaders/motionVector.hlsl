@@ -19,14 +19,18 @@ struct VertexOut
 VertexOut VS(VertexIn vertexIn)
 {
 	VertexOut vertexOut;
-	vertexOut.position = mul(float4(vertexIn.position, 1.0f), currentMatrix);
+	vertexOut.position = float4(vertexIn.position, 1.0f);
     vertexOut.uv = vertexIn.uv;    
     return vertexOut;
 }
 
+Texture2D g_depth : register(t0);
+SamplerState g_sampler : register(s0);
+
 float4 PS(VertexOut vertexOut) : SV_Target
 {
-    return float4(1.0, 0.5, 0.0, 1.0);
+    float r = g_depth.Sample(g_sampler, vertexOut.uv).r;
+    return float4(r, 0.0, 0.0, 0.0);
 }
 
 

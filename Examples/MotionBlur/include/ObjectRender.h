@@ -19,7 +19,8 @@ public:
     bool initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList,
                     ID3D12DescriptorHeap* srvHeap,
                     int textureOffset,
-                    int srvOffset);
+                    int renderTextureOffset,
+                    int renderDepthOffset);
     void postInitialize();
     void update(fw::Camera* camera);
     void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
@@ -68,7 +69,7 @@ private:
     void createConstantBuffer();
     void createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int textureOffset);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
-    void createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffset);
+    void createRenderTarget(ID3D12DescriptorHeap* srvHeap, int renderTextureOffset, int renderDepthOffset);
     void createShaders();
     void createRootSignature();
     void createObjectRenderPSO();

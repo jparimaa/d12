@@ -6,8 +6,10 @@
 
 namespace
 {
-const float c_clearColor[4] = {1.0f, 0.0f, 0.0f, 1.0f};
-}
+const float c_clearColor[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+const DXGI_FORMAT c_renderFormat = DXGI_FORMAT_R16G16_FLOAT;
+
+} // namespace
 
 bool MotionVector::initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList,
                               ID3D12DescriptorHeap* srvHeap,
@@ -41,7 +43,7 @@ void MotionVector::update(fw::Camera* camera)
     m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 }
 
-void MotionVector::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
+void MotionVector::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int depthOffset)
 {
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_motionVectorRenderTexture.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
@@ -55,6 +57,14 @@ void MotionVector::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& com
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
     commandList->SetGraphicsRootConstantBufferView(0, m_constantBuffers[fw::API::getCurrentFrameIndex()]->GetGPUVirtualAddress());
+
+    std::vector<ID3D12DescriptorHeap*> descriptorHeaps{srvHeap};
+    commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
+
+    CD3DX12_GPU_DESCRIPTOR_HANDLE depthTextureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(srvHeap->GetGPUDescriptorHandleForHeapStart());
+    depthTextureHandle.Offset(depthOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+    commandList->SetGraphicsRootDescriptorTable(1, depthTextureHandle);
 
     commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
     commandList->IASetIndexBuffer(&m_indexBufferView);
@@ -120,14 +130,14 @@ void MotionVector::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
     resourceDesc.Height = windowHeight;
     resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-    resourceDesc.Format = fw::API::getBackBufferFormat();
+    resourceDesc.Format = c_renderFormat;
 
     D3D12_CLEAR_VALUE clearValue{};
     clearValue.Color[0] = c_clearColor[0];
     clearValue.Color[1] = c_clearColor[1];
     clearValue.Color[2] = c_clearColor[2];
     clearValue.Color[3] = c_clearColor[3];
-    clearValue.Format = fw::API::getBackBufferFormat();
+    clearValue.Format = c_renderFormat;
 
     CD3DX12_HEAP_PROPERTIES heapProperty(D3D12_HEAP_TYPE_DEFAULT);
 
@@ -152,7 +162,7 @@ void MotionVector::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
     renderTargetViewDesc.Texture2D.MipSlice = 0;
     renderTargetViewDesc.Texture2D.PlaneSlice = 0;
     renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-    renderTargetViewDesc.Format = fw::API::getBackBufferFormat();
+    renderTargetViewDesc.Format = c_renderFormat;
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
     d3dDevice->CreateRenderTargetView(m_motionVectorRenderTexture.Get(), &renderTargetViewDesc, rtvHandle);
@@ -161,7 +171,7 @@ void MotionVector::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
     srvDesc.Texture2D.MipLevels = resourceDesc.MipLevels;
     srvDesc.Texture2D.MostDetailedMip = 0;
-    srvDesc.Format = fw::API::getBackBufferFormat();
+    srvDesc.Format = c_renderFormat;
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
@@ -183,10 +193,29 @@ void MotionVector::createShaders()
 
 void MotionVector::createRootSignature()
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(1);
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
     rootParameters[0].InitAsConstantBufferView(0);
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
+    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    rootParameters[1].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
+
+    D3D12_STATIC_SAMPLER_DESC sampler{};
+    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+    sampler.MipLODBias = 0;
+    sampler.MaxAnisotropy = 0;
+    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+    sampler.MinLOD = 0.0f;
+    sampler.MaxLOD = D3D12_FLOAT32_MAX;
+    sampler.ShaderRegister = 0;
+    sampler.RegisterSpace = 0;
+    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     Microsoft::WRL::ComPtr<ID3DBlob> serializedRootSig = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> errorBlob = nullptr;
@@ -220,7 +249,7 @@ void MotionVector::createMotionVectorPSO()
     psoDesc.SampleMask = UINT_MAX;
     psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
     psoDesc.NumRenderTargets = 1;
-    psoDesc.RTVFormats[0] = fw::API::getBackBufferFormat();
+    psoDesc.RTVFormats[0] = c_renderFormat;
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
     psoDesc.DSVFormat = DXGI_FORMAT_UNKNOWN;

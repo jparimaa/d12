@@ -10,9 +10,14 @@
 namespace
 {
 const float c_clearColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-}
+const DXGI_FORMAT c_depthFormat = DXGI_FORMAT_D32_FLOAT;
+} // namespace
 
-bool ObjectRender::initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int textureOffset, int srvOffset)
+bool ObjectRender::initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList,
+                              ID3D12DescriptorHeap* srvHeap,
+                              int textureOffset,
+                              int renderTextureOffset,
+                              int renderDepthOffset)
 {
     m_srvHeap = srvHeap;
     m_textureOffset = textureOffset;
@@ -24,7 +29,7 @@ bool ObjectRender::initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>&
     createTextures(model, commandList, srvHeap, textureOffset);
     createVertexBuffers(model, commandList);
 
-    createRenderTarget(srvHeap, srvOffset);
+    createRenderTarget(srvHeap, renderTextureOffset, renderDepthOffset);
     createShaders();
     createRootSignature();
     createObjectRenderPSO();
@@ -60,6 +65,7 @@ void ObjectRender::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& com
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
 
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_objectRenderTexture.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET));
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_depthStencilTexture.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE));
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
     commandList->ClearRenderTargetView(rtvHandle, c_clearColor, 0, nullptr);
@@ -90,6 +96,7 @@ void ObjectRender::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& com
     }
 
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_objectRenderTexture.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_depthStencilTexture.Get(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 }
 
 void ObjectRender::loadModel(fw::Model& model)
@@ -203,7 +210,7 @@ void ObjectRender::createVertexBuffers(const fw::Model& model, Microsoft::WRL::C
     }
 }
 
-void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffset)
+void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int renderTextureOffset, int renderDepthOffset)
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
@@ -242,14 +249,14 @@ void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
 
     // Create depth texture resource
     resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-    resourceDesc.Format = fw::API::getDepthStencilFormat();
-    clearValue.Format = fw::API::getDepthStencilFormat();
+    resourceDesc.Format = c_depthFormat;
+    clearValue.Format = c_depthFormat;
     clearValue.DepthStencil.Depth = 1.0f;
 
     CHECK(d3dDevice->CreateCommittedResource(&heapProperty,
                                              D3D12_HEAP_FLAG_NONE,
                                              &resourceDesc,
-                                             D3D12_RESOURCE_STATE_DEPTH_WRITE,
+                                             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
                                              &clearValue,
                                              IID_PPV_ARGS(m_depthStencilTexture.GetAddressOf())));
 
@@ -282,7 +289,7 @@ void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
 
     D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc{};
     depthStencilViewDesc.Texture2D.MipSlice = 0;
-    depthStencilViewDesc.Format = fw::API::getDepthStencilFormat();
+    depthStencilViewDesc.Format = c_depthFormat;
     depthStencilViewDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     depthStencilViewDesc.Flags = D3D12_DSV_FLAG_NONE;
 
@@ -298,14 +305,15 @@ void ObjectRender::createRenderTarget(ID3D12DescriptorHeap* srvHeap, int srvOffs
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Format = fw::API::getBackBufferFormat();
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(srvHeap->GetCPUDescriptorHandleForHeapStart());
-    srvHandle.Offset(srvOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE renderTextureHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(srvHeap->GetCPUDescriptorHandleForHeapStart());
+    renderTextureHandle.Offset(renderTextureOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    d3dDevice->CreateShaderResourceView(m_objectRenderTexture.Get(), &srvDesc, renderTextureHandle);
 
-    d3dDevice->CreateShaderResourceView(m_objectRenderTexture.Get(), &srvDesc, srvHandle);
-    srvHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
 
-    srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
-    d3dDevice->CreateShaderResourceView(m_depthStencilTexture.Get(), &srvDesc, srvHandle);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE renderDepthHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(srvHeap->GetCPUDescriptorHandleForHeapStart());
+    renderDepthHandle.Offset(renderDepthOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    d3dDevice->CreateShaderResourceView(m_depthStencilTexture.Get(), &srvDesc, renderDepthHandle);
 }
 
 void ObjectRender::createShaders()
@@ -379,7 +387,7 @@ void ObjectRender::createObjectRenderPSO()
     psoDesc.RTVFormats[0] = fw::API::getBackBufferFormat();
     psoDesc.SampleDesc.Count = 1;
     psoDesc.SampleDesc.Quality = 0;
-    psoDesc.DSVFormat = fw::API::getDepthStencilFormat();
+    psoDesc.DSVFormat = c_depthFormat;
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
     CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PSO)));
