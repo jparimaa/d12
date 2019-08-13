@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ObjectRender.h"
+#include "MotionVector.h"
 
 #include <fw/Application.h>
 #include <fw/Camera.h>
@@ -47,6 +48,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_PSO = nullptr;
 
     ObjectRender m_objectRender;
+    MotionVector m_motionVector;
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;

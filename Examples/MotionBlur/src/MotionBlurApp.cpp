@@ -16,9 +16,10 @@
 
 namespace
 {
-const int c_descriptorHeapSize = 1024;
-const int c_textureOffset = 0;
-const int c_srvOffset = 512;
+const int c_descriptorHeapSize = 2048;
+const int c_albedoTextureOffset = 0;
+const int c_renderObjectTextureOffset = 512;
+const int c_motionVectorTextureOffset = 1024;
 } // namespace
 
 bool MotionBlurApp::initialize()
@@ -33,7 +34,8 @@ bool MotionBlurApp::initialize()
 
     createRenderPSO();
 
-    m_objectRender.initialize(commandList, m_descriptorHeap.Get(), c_textureOffset, c_srvOffset);
+    m_objectRender.initialize(commandList, m_descriptorHeap.Get(), c_albedoTextureOffset, c_renderObjectTextureOffset);
+    m_motionVector.initialize(commandList, m_descriptorHeap.Get(), c_motionVectorTextureOffset);
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -41,6 +43,7 @@ bool MotionBlurApp::initialize()
     m_vertexUploadBuffer.Reset();
     m_indexUploadBuffer.Reset();
     m_objectRender.postInitialize();
+    m_motionVector.postInitialize();
 
     // Camera
     m_cameraController.setCamera(&m_camera);
@@ -66,6 +69,7 @@ bool MotionBlurApp::initialize()
 void MotionBlurApp::update()
 {
     m_objectRender.update(&m_camera);
+    m_motionVector.update(&m_camera);
     m_cameraController.update();
     m_camera.updateViewMatrix();
 
@@ -87,6 +91,7 @@ void MotionBlurApp::fillCommandList()
     commandList->RSSetScissorRects(1, &m_scissorRect);
 
     m_objectRender.render(commandList);
+    m_motionVector.render(commandList);
 
     commandList->SetPipelineState(m_PSO.Get());
 
@@ -108,10 +113,15 @@ void MotionBlurApp::fillCommandList()
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-    srvHandle.Offset(c_srvOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+    CD3DX12_GPU_DESCRIPTOR_HANDLE objectTextureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    objectTextureHandle.Offset(c_renderObjectTextureOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
 
-    commandList->SetGraphicsRootDescriptorTable(0, srvHandle);
+    commandList->SetGraphicsRootDescriptorTable(0, objectTextureHandle);
+
+    CD3DX12_GPU_DESCRIPTOR_HANDLE motionVectorTextureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    motionVectorTextureHandle.Offset(c_motionVectorTextureOffset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+    commandList->SetGraphicsRootDescriptorTable(1, motionVectorTextureHandle);
 
     commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
     commandList->IASetIndexBuffer(&m_indexBufferView);
@@ -167,11 +177,15 @@ void MotionBlurApp::createShaders()
 
 void MotionBlurApp::createRootSignature()
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(1);
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
 
-    std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
-    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
-    rootParameters[0].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
+    CD3DX12_DESCRIPTOR_RANGE objectRenderTextureDescriptorRange;
+    objectRenderTextureDescriptorRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    rootParameters[0].InitAsDescriptorTable(1, &objectRenderTextureDescriptorRange);
+
+    CD3DX12_DESCRIPTOR_RANGE motionVectorTextureDescriptorRange;
+    motionVectorTextureDescriptorRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    rootParameters[1].InitAsDescriptorTable(1, &motionVectorTextureDescriptorRange);
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
     sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;

@@ -1,3 +1,9 @@
+cbuffer cbPerObject : register(b0)
+{
+	float4x4 previousMatrix; 
+    float4x4 currentMatrix; 
+};
+
 struct VertexIn
 {
 	float3 position : POSITION;
@@ -10,22 +16,17 @@ struct VertexOut
     float2 uv : TEXCOORD;
 };
 
-Texture2D g_objectRender : register(t0);
-Texture2D g_motionVector : register(t1);
-
-SamplerState g_sampler : register(s0);
-
 VertexOut VS(VertexIn vertexIn)
 {
 	VertexOut vertexOut;
-	vertexOut.position = float4(vertexIn.position, 1.0f);
+	vertexOut.position = mul(float4(vertexIn.position, 1.0f), currentMatrix);
     vertexOut.uv = vertexIn.uv;    
     return vertexOut;
 }
 
 float4 PS(VertexOut vertexOut) : SV_Target
 {
-    return g_objectRender.Sample(g_sampler, vertexOut.uv) + 0.1 * g_motionVector.Sample(g_sampler, vertexOut.uv);
+    return float4(1.0, 0.5, 0.0, 1.0);
 }
 
 
