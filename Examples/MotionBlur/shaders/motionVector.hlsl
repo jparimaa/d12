@@ -1,7 +1,7 @@
 cbuffer cbPerObject : register(b0)
 {
-	float4x4 previousMatrix; 
-    float4x4 currentMatrix; 
+    float4x4 previousViewProjection; 
+    float4x4 inverseViewProjection;
 };
 
 struct VertexIn
@@ -27,10 +27,21 @@ VertexOut VS(VertexIn vertexIn)
 Texture2D g_depth : register(t0);
 SamplerState g_sampler : register(s0);
 
-float4 PS(VertexOut vertexOut) : SV_Target
+float2 PS(VertexOut vertexOut) : SV_Target
 {
-    float r = g_depth.Sample(g_sampler, vertexOut.uv).r;
-    return float4(r, 0.0, 0.0, 0.0);
+    float z = g_depth.Sample(g_sampler, vertexOut.uv).r;
+    float4 viewportPos = float4(vertexOut.uv.x * 2 - 1, 
+                                (1 - vertexOut.uv.y) * 2 - 1,
+                                z, 1); 
+
+    float4 worldPos = mul(viewportPos, inverseViewProjection);
+    worldPos /= worldPos.w;
+
+    float4 currentPos = viewportPos;
+    float4 previousPos = mul(worldPos, previousViewProjection);
+    previousPos /= previousPos.w;
+    float4 velocity = (currentPos - previousPos) / 2.0;
+    return velocity.xy;
 }
 
 

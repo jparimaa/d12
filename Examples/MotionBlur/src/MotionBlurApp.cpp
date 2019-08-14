@@ -69,10 +69,11 @@ bool MotionBlurApp::initialize()
 
 void MotionBlurApp::update()
 {
-    m_objectRender.update(&m_camera);
-    m_motionVector.update(&m_camera);
     m_cameraController.update();
     m_camera.updateViewMatrix();
+
+    m_objectRender.update(&m_camera);
+    m_motionVector.update(&m_camera);
 
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
     {

@@ -8,7 +8,6 @@ namespace
 {
 const float c_clearColor[4] = {1.0f, 0.0f, 0.0f, 0.0f};
 const DXGI_FORMAT c_renderFormat = DXGI_FORMAT_R16G16_FLOAT;
-
 } // namespace
 
 bool MotionVector::initialize(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList,
@@ -32,15 +31,18 @@ void MotionVector::postInitialize()
 
 void MotionVector::update(fw::Camera* camera)
 {
-    m_previousMatrix = m_currentMatrix;
-    m_currentMatrix = camera->getViewMatrix() * camera->getProjectionMatrix();
+    DirectX::XMMATRIX viewProjection = camera->getViewMatrix() * camera->getProjectionMatrix();
+    DirectX::XMMATRIX inverseViewProjection = DirectX::XMMatrixInverse(nullptr, viewProjection);
 
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
     char* mappedData = nullptr;
+    int matrixSize = sizeof(DirectX::XMMATRIX);
     CHECK(m_constantBuffers[currentFrameIndex]->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
-    memcpy(&mappedData[0], &m_previousMatrix, sizeof(DirectX::XMMATRIX));
-    memcpy(&mappedData[sizeof(DirectX::XMMATRIX)], &m_currentMatrix, sizeof(DirectX::XMMATRIX));
+    memcpy(&mappedData[0 * matrixSize], &m_previousVPMatrix, matrixSize);
+    memcpy(&mappedData[1 * matrixSize], &inverseViewProjection, matrixSize);
     m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
+
+    m_previousVPMatrix = viewProjection;
 }
 
 void MotionVector::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int depthOffset)
@@ -56,7 +58,8 @@ void MotionVector::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& com
     commandList->OMSetRenderTargets(1, &rtvHandle, true, nullptr);
 
     commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-    commandList->SetGraphicsRootConstantBufferView(0, m_constantBuffers[fw::API::getCurrentFrameIndex()]->GetGPUVirtualAddress());
+    int currentFrameIndex = fw::API::getCurrentFrameIndex();
+    commandList->SetGraphicsRootConstantBufferView(0, m_constantBuffers[currentFrameIndex]->GetGPUVirtualAddress());
 
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{srvHeap};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
@@ -77,7 +80,7 @@ void MotionVector::createConstantBuffer()
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
-    uint32_t constantBufferSize = fw::roundUpByteSize(2 * sizeof(DirectX::XMFLOAT4X4));
+    uint32_t constantBufferSize = fw::roundUpByteSize(2 * sizeof(DirectX::XMMATRIX));
     m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
 
     for (int i = 0; i < m_constantBuffers.size(); ++i)

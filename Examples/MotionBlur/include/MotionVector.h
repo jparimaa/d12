@@ -42,8 +42,7 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_PSO = nullptr;
 
-    DirectX::XMMATRIX m_previousMatrix;
-    DirectX::XMMATRIX m_currentMatrix;
+    DirectX::XMMATRIX m_previousVPMatrix;
 
     void createConstantBuffer();
     void createVertexBuffer(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
