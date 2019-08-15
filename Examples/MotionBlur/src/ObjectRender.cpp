@@ -43,13 +43,13 @@ void ObjectRender::postInitialize()
     m_vertexUploadBuffers.clear();
 }
 
-void ObjectRender::update(fw::Camera* camera)
+void ObjectRender::update(const fw::Camera& camera)
 {
     static fw::Transformation transformation;
-    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.4f * fw::API::getTimeDelta());
+    //transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.4f * fw::API::getTimeDelta());
     transformation.updateWorldMatrix();
 
-    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * camera->getViewMatrix() * camera->getProjectionMatrix();
+    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * camera.getViewMatrix() * camera.getProjectionMatrix();
     DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
 
     int currentFrameIndex = fw::API::getCurrentFrameIndex();

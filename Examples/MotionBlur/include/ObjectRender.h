@@ -22,7 +22,7 @@ public:
                     int renderTextureOffset,
                     int renderDepthOffset);
     void postInitialize();
-    void update(fw::Camera* camera);
+    void update(const fw::Camera& camera);
     void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);
 
 private:

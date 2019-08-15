@@ -18,7 +18,7 @@ public:
                     ID3D12DescriptorHeap* srvHeap,
                     int srvOffset);
     void postInitialize();
-    void update(fw::Camera* camera);
+    void update(const fw::Camera& camera);
     void render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int depthOffset);
 
 private:

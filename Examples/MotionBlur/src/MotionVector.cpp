@@ -29,9 +29,11 @@ void MotionVector::postInitialize()
     m_indexUploadBuffer.Reset();
 }
 
-void MotionVector::update(fw::Camera* camera)
+void MotionVector::update(const fw::Camera& camera)
 {
-    DirectX::XMMATRIX viewProjection = camera->getViewMatrix() * camera->getProjectionMatrix();
+    DirectX::XMMATRIX view = camera.getViewMatrix();
+    DirectX::XMMATRIX projection = camera.getProjectionMatrix();
+    DirectX::XMMATRIX viewProjection = projection * view;
     DirectX::XMMATRIX inverseViewProjection = DirectX::XMMatrixInverse(nullptr, viewProjection);
 
     int currentFrameIndex = fw::API::getCurrentFrameIndex();

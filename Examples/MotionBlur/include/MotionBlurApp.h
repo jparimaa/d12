@@ -5,7 +5,6 @@
 
 #include <fw/Application.h>
 #include <fw/Camera.h>
-#include <fw/CameraController.h>
 #include <fw/Model.h>
 
 #include "d3dx12.h"
@@ -51,7 +50,6 @@ private:
     MotionVector m_motionVector;
 
     fw::Camera m_camera;
-    fw::CameraController m_cameraController;
 
     void createDescriptorHeap();
     void createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList);

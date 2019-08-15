@@ -21,6 +21,8 @@ const int c_albedoTextureOffset = 0;
 const int c_renderTextureOffset = 512;
 const int c_renderDepthOffset = 513;
 const int c_motionVectorTextureOffset = 1024;
+const float c_clearColor[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+
 } // namespace
 
 bool MotionBlurApp::initialize()
@@ -47,8 +49,8 @@ bool MotionBlurApp::initialize()
     m_motionVector.postInitialize();
 
     // Camera
-    m_cameraController.setCamera(&m_camera);
     m_camera.getTransformation().setPosition(0.0f, 10.0f, -50.0f);
+    m_camera.getTransformation().rotate(fw::Transformation::c_up, -0.5f);
 
     // Setup viewport and scissor
     int windowWidth = fw::API::getWindowWidth();
@@ -69,11 +71,19 @@ bool MotionBlurApp::initialize()
 
 void MotionBlurApp::update()
 {
-    m_cameraController.update();
+    static float timer = 0.0f;
+    static float dir = 1.0f;
+    timer += fw::API::getTimeDelta();
+    if (timer > 1.5f)
+    {
+        dir *= -1.0f;
+        timer = 0.0f;
+    }
+    m_camera.getTransformation().rotate(fw::Transformation::c_up, dir * fw::API::getTimeDelta() * 0.8f);
     m_camera.updateViewMatrix();
 
-    m_objectRender.update(&m_camera);
-    m_motionVector.update(&m_camera);
+    m_objectRender.update(m_camera);
+    m_motionVector.update(m_camera);
 
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
     {
@@ -101,8 +111,7 @@ void MotionBlurApp::fillCommandList()
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
-    const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
-    commandList->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
+    commandList->ClearRenderTargetView(currentBackBufferView, c_clearColor, 0, nullptr);
 
     D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = fw::API::getDepthStencilView();
     commandList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);

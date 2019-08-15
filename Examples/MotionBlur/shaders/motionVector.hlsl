@@ -40,7 +40,7 @@ float2 PS(VertexOut vertexOut) : SV_Target
     float4 currentPos = viewportPos;
     float4 previousPos = mul(worldPos, previousViewProjection);
     previousPos /= previousPos.w;
-    float4 velocity = (currentPos - previousPos) / 2.0;
+    float4 velocity = (currentPos - previousPos) / 10.0;
     return velocity.xy;
 }
 
