@@ -197,10 +197,13 @@ void Framework::completeInitialization()
 
 void Framework::waitForFrame(int frameIndex)
 {
-    HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
-    CHECK(m_fence->SetEventOnCompletion(m_fenceIds[frameIndex], eventHandle));
-    WaitForSingleObject(eventHandle, INFINITE);
-    CloseHandle(eventHandle);
+    if (m_fence->GetCompletedValue() <= m_fenceIds[frameIndex])
+    {
+        HANDLE eventHandle = CreateEventEx(nullptr, false, false, EVENT_ALL_ACCESS);
+        CHECK(m_fence->SetEventOnCompletion(m_fenceIds[frameIndex], eventHandle));
+        WaitForSingleObject(eventHandle, INFINITE);
+        CloseHandle(eventHandle);
+    }
 }
 
 void Framework::render()
@@ -208,7 +211,7 @@ void Framework::render()
     std::vector<ID3D12CommandList*> cmdLists{m_commandList.Get()};
     m_commandQueue->ExecuteCommandLists(static_cast<UINT>(cmdLists.size()), cmdLists.data());
 
-    CHECK(m_swapChain->Present(0, 0));
+    CHECK(m_swapChain->Present(1, 0));
 
     m_fenceIds[m_currentFrameIndex] = m_currentFenceId;
     CHECK(m_commandQueue->Signal(m_fence.Get(), m_currentFenceId));
