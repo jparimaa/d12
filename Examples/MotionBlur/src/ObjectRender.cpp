@@ -71,7 +71,7 @@ void ObjectRender::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& com
     commandList->ClearRenderTargetView(rtvHandle, c_clearColor, 0, nullptr);
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
-    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+    commandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
     commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     commandList->OMSetRenderTargets(1, &rtvHandle, true, &dsvHandle);
