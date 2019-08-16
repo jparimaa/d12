@@ -29,7 +29,7 @@ float4 PS(VertexOut vertexOut) : SV_Target
     float4 color = g_objectRender.Sample(g_sampler, texCoord);
     float2 velocity = g_motionVector.Sample(g_sampler, vertexOut.uv).xy;
     texCoord += velocity;
-    for(int i = 1; i < 5; ++i, texCoord += velocity)
+    for(int i = 1; i < 6; ++i, texCoord += velocity)
     {
         // Sample the color buffer along the velocity vector.
         float4 currentColor = g_objectRender.Sample(g_sampler, texCoord);
@@ -37,7 +37,7 @@ float4 PS(VertexOut vertexOut) : SV_Target
         color += currentColor;
     }
     // Average all of the samples to get the final blur color.
-    float4 finalColor = color / 5.0;
+    float4 finalColor = color / 6.0;
     return finalColor;
 }
 

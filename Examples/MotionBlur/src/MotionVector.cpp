@@ -33,8 +33,10 @@ void MotionVector::update(const fw::Camera& camera)
 {
     DirectX::XMMATRIX view = camera.getViewMatrix();
     DirectX::XMMATRIX projection = camera.getProjectionMatrix();
-    DirectX::XMMATRIX viewProjection = projection * view;
-    DirectX::XMMATRIX inverseViewProjection = DirectX::XMMatrixInverse(nullptr, viewProjection);
+    DirectX::XMMATRIX viewProjection = view * projection;
+    DirectX::XMMATRIX vp = DirectX::XMMatrixTranspose(viewProjection);
+
+    DirectX::XMMATRIX inverseViewProjection = DirectX::XMMatrixInverse(nullptr, vp);
 
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
     char* mappedData = nullptr;
@@ -44,7 +46,7 @@ void MotionVector::update(const fw::Camera& camera)
     memcpy(&mappedData[1 * matrixSize], &inverseViewProjection, matrixSize);
     m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 
-    m_previousVPMatrix = viewProjection;
+    m_previousVPMatrix = vp;
 }
 
 void MotionVector::render(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList, ID3D12DescriptorHeap* srvHeap, int depthOffset)
