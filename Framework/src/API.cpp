@@ -29,12 +29,12 @@ float API::getAspectRatio()
     return static_cast<float>(getWindowWidth()) / static_cast<float>(getWindowHeight());
 }
 
-Microsoft::WRL::ComPtr<ID3D12Device> API::getD3dDevice()
+Microsoft::WRL::ComPtr<ID3D12Device5> API::getD3dDevice()
 {
     return s_framework->m_d3dDevice;
 }
 
-Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> API::getCommandList()
+Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> API::getCommandList()
 {
     return s_framework->m_commandList;
 }

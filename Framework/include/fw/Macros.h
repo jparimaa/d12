@@ -16,3 +16,5 @@
     }                                                                                                   \
 }
 // clang-format on
+
+#define ROUND_UP(v, powerOf2Alignment) (((v) + (powerOf2Alignment)-1) & ~((powerOf2Alignment)-1))
