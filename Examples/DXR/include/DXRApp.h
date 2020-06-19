@@ -38,9 +38,12 @@ private:
     };
 
     std::vector<RenderObject> m_renderObjects;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_blasBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_tlasBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_tlasInstanceDescsBuffer;
 
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
     void createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
-    void createTLAS();
+    void createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
 };
