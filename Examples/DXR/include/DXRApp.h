@@ -3,9 +3,10 @@
 #include <fw/Application.h>
 #include <fw/Model.h>
 
-#include "d3dx12.h"
 #include <wrl.h>
+#include "d3dx12.h"
 #include <d3d12.h>
+#include <dxcapi.h>
 
 #include <vector>
 
@@ -42,8 +43,14 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_tlasBuffer;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_tlasInstanceDescsBuffer;
 
+    Microsoft::WRL::ComPtr<IDxcBlob> m_rayGenShader;
+    Microsoft::WRL::ComPtr<IDxcBlob> m_missShader;
+    Microsoft::WRL::ComPtr<IDxcBlob> m_hitShader;
+
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
     void createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
     void createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
+    void createShaders();
+    void createPSO();
 };

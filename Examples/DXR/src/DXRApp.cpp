@@ -10,6 +10,8 @@
 
 #include <iostream>
 #include <cassert>
+#include <fstream>
+#include <sstream>
 
 namespace
 {
@@ -24,6 +26,62 @@ bool hasDXRSupport()
     return options.RaytracingTier >= D3D12_RAYTRACING_TIER_1_0;
 }
 
+IDxcBlob* compileDXRShader(LPCWSTR fileName)
+{
+    static IDxcCompiler* compiler = nullptr;
+    static IDxcLibrary* library = nullptr;
+    static IDxcIncludeHandler* dxcIncludeHandler = nullptr;
+
+    if (!compiler)
+    {
+        CHECK(DxcCreateInstance(CLSID_DxcCompiler, __uuidof(IDxcCompiler), (void**)&compiler));
+        CHECK(DxcCreateInstance(CLSID_DxcLibrary, __uuidof(IDxcLibrary), (void**)&library));
+        CHECK(library->CreateIncludeHandler(&dxcIncludeHandler));
+    }
+
+    std::ifstream shaderFile(fileName);
+    assert(shaderFile.good());
+
+    std::stringstream strStream;
+    strStream << shaderFile.rdbuf();
+    std::string shaderCode = strStream.str();
+
+    IDxcBlobEncoding* textBlob;
+    CHECK(library->CreateBlobWithEncodingFromPinned((LPBYTE)shaderCode.c_str(), (uint32_t)shaderCode.size(), 0, &textBlob));
+
+    IDxcOperationResult* result;
+    CHECK(compiler->Compile(textBlob, fileName, L"", L"lib_6_3", nullptr, 0, nullptr, 0, dxcIncludeHandler, &result));
+
+    HRESULT resultStatus;
+    result->GetStatus(&resultStatus);
+    if (FAILED(resultStatus))
+    {
+        IDxcBlobEncoding* error;
+        HRESULT hr = result->GetErrorBuffer(&error);
+        if (FAILED(hr))
+        {
+            std::cerr << "ERROR: Failed to shader compilation error message\n";
+        }
+
+        std::vector<char> infoLog(error->GetBufferSize() + 1);
+        memcpy(infoLog.data(), error->GetBufferPointer(), error->GetBufferSize());
+        infoLog[error->GetBufferSize()] = 0;
+
+        std::cerr << "ERROR: Shader compiler error:\n";
+        for (const char& c : infoLog)
+        {
+            std::cerr << c;
+        }
+        std::cerr << "\n";
+
+        CHECK(false);
+        return nullptr;
+    }
+
+    IDxcBlob* blob;
+    CHECK(result->GetResult(&blob));
+    return blob;
+}
 } // namespace
 
 bool DXRApp::initialize()
@@ -41,6 +99,7 @@ bool DXRApp::initialize()
     createVertexBuffers(model, commandList, vertexUploadBuffers);
     createBLAS(commandList);
     createTLAS(commandList);
+    createShaders();
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -298,4 +357,15 @@ void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
     uavBarrier.UAV.pResource = m_tlasBuffer.Get();
     uavBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
     commandList->ResourceBarrier(1, &uavBarrier);
+}
+
+void DXRApp::createShaders()
+{
+    m_rayGenShader = compileDXRShader(L"RayGen.hlsl");
+    m_missShader = compileDXRShader(L"Miss.hlsl");
+    m_hitShader = compileDXRShader(L"Hit.hlsl");
+}
+
+void DXRApp::createPSO()
+{
 }

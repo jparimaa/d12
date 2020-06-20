@@ -22,6 +22,7 @@ function(ADD_PROJECT_WITH_DEFAULT_SETTINGS PROJECT_NAME)
             d3d12.lib
             dxgi.lib
             dxguid.lib
+            dxcompiler.lib
             D3DCompiler.lib
     )
 
