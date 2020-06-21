@@ -100,6 +100,9 @@ bool DXRApp::initialize()
     createBLAS(commandList);
     createTLAS(commandList);
     createShaders();
+    createRayGenRootSignature();
+    createEmptyRootSignature(m_missRootSignature);
+    createEmptyRootSignature(m_hitRootSignature);
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -364,6 +367,70 @@ void DXRApp::createShaders()
     m_rayGenShader = compileDXRShader(L"RayGen.hlsl");
     m_missShader = compileDXRShader(L"Miss.hlsl");
     m_hitShader = compileDXRShader(L"Hit.hlsl");
+}
+
+void DXRApp::createRayGenRootSignature()
+{
+    D3D12_DESCRIPTOR_RANGE outputDesc{};
+    outputDesc.BaseShaderRegister = 0; // u0
+    outputDesc.NumDescriptors = 1;
+    outputDesc.RegisterSpace = 0; // implicit register space 0
+    outputDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV; // RWTexture2D<float4>
+    outputDesc.OffsetInDescriptorsFromTableStart = 0;
+
+    D3D12_DESCRIPTOR_RANGE tlasDesc{};
+    tlasDesc.BaseShaderRegister = 0; // t0
+    tlasDesc.NumDescriptors = 1;
+    tlasDesc.RegisterSpace = 0; // implicit register space 0
+    tlasDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // RaytracingAccelerationStructure
+    tlasDesc.OffsetInDescriptorsFromTableStart = 1;
+
+    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc, tlasDesc};
+
+    D3D12_ROOT_PARAMETER rootParameter{};
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameter.DescriptorTable.NumDescriptorRanges = static_cast<UINT>(rangesPerRootParameter.size());
+    rootParameter.DescriptorTable.pDescriptorRanges = rangesPerRootParameter.data();
+    std::vector<D3D12_ROOT_PARAMETER> parameters{rootParameter};
+
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.NumParameters = static_cast<UINT>(parameters.size());
+    rootSignatureDesc.pParameters = parameters.data();
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+    ID3DBlob* signatureBlob;
+    ID3DBlob* errorBlob;
+    HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
+
+    if (errorBlob)
+    {
+        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+        CHECK(hr);
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_rayGenRootSignature)));
+}
+
+void DXRApp::createEmptyRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature>& rootSignature)
+{
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.NumParameters = 0;
+    rootSignatureDesc.pParameters = nullptr;
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+    ID3DBlob* signatureBlob;
+    ID3DBlob* errorBlob;
+    HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
+
+    if (errorBlob)
+    {
+        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+        CHECK(hr);
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
 }
 
 void DXRApp::createPSO()
