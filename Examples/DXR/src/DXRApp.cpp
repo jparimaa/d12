@@ -101,8 +101,10 @@ bool DXRApp::initialize()
     createTLAS(commandList);
     createShaders();
     createRayGenRootSignature();
-    createEmptyRootSignature(m_missRootSignature);
-    createEmptyRootSignature(m_hitRootSignature);
+    createMissRootSignature();
+    createHitRootSignature();
+    createDummyRootSignatures();
+    createStateObject();
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -410,9 +412,10 @@ void DXRApp::createRayGenRootSignature()
 
     Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
     CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_rayGenRootSignature)));
+    signatureBlob->Release();
 }
 
-void DXRApp::createEmptyRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature>& rootSignature)
+void DXRApp::createMissRootSignature()
 {
     D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
     rootSignatureDesc.NumParameters = 0;
@@ -430,9 +433,216 @@ void DXRApp::createEmptyRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature
     }
 
     Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
-    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
+    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_missRootSignature)));
+    signatureBlob->Release();
 }
 
-void DXRApp::createPSO()
+void DXRApp::createHitRootSignature()
 {
+    D3D12_ROOT_PARAMETER rootParameter{};
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+    rootParameter.Descriptor.RegisterSpace = 0;
+    rootParameter.Descriptor.ShaderRegister = 0;
+    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    std::vector<D3D12_ROOT_PARAMETER> parameters{rootParameter};
+
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.NumParameters = static_cast<UINT>(parameters.size());
+    rootSignatureDesc.pParameters = parameters.data();
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+    ID3DBlob* signatureBlob;
+    ID3DBlob* errorBlob;
+    HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
+
+    if (errorBlob)
+    {
+        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+        CHECK(hr);
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_hitRootSignature)));
+    signatureBlob->Release();
+}
+
+void DXRApp::createDummyRootSignatures()
+{
+    D3D12_ROOT_SIGNATURE_DESC rootDesc{};
+    rootDesc.NumParameters = 0;
+    rootDesc.pParameters = nullptr;
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE; // A global root signature is the default, hence this flag
+
+    ID3DBlob* signatureBlob;
+    ID3DBlob* errorBlob;
+
+    HRESULT hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
+    CHECK(hr);
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    hr = device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_dummyGlobalRootSignature));
+    signatureBlob->Release();
+    CHECK(hr);
+
+    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+    hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
+    CHECK(hr);
+    hr = device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_dummyLocalRootSignature));
+    signatureBlob->Release();
+    CHECK(hr);
+}
+
+void DXRApp::createStateObject()
+{
+    const UINT64 subobjectCount = //
+        3 + // Shaders: RayGen, Miss, ClosestHit
+        1 + // Hit group
+        1 + // Shader configuration
+        1 + // Shader payload
+        2 * 3 + // Root signature declaration + association
+        2 + // Empty global and local root signatures
+        1; // Final pipeline subobject
+
+    std::vector<D3D12_STATE_SUBOBJECT> subobjects;
+    subobjects.reserve(subobjectCount);
+
+    // Shaders
+    struct LibraryExport
+    {
+        LibraryExport(LPCWSTR n, Microsoft::WRL::ComPtr<IDxcBlob> b) :
+            name(n), blob(b) {}
+
+        const LPCWSTR name;
+        const Microsoft::WRL::ComPtr<IDxcBlob> blob;
+        D3D12_EXPORT_DESC exportDesc{};
+        D3D12_DXIL_LIBRARY_DESC libraryDesc{};
+        D3D12_STATE_SUBOBJECT subobject{};
+    };
+
+    std::vector<LibraryExport> exportData{{L"RayGen", m_rayGenShader}, {L"Miss", m_missShader}, {L"ClosestHit", m_hitShader}};
+
+    for (LibraryExport& e : exportData)
+    {
+        e.exportDesc.Name = e.name;
+        e.exportDesc.ExportToRename = nullptr;
+        e.exportDesc.Flags = D3D12_EXPORT_FLAG_NONE;
+
+        e.libraryDesc.DXILLibrary.BytecodeLength = e.blob->GetBufferSize();
+        e.libraryDesc.DXILLibrary.pShaderBytecode = e.blob->GetBufferPointer();
+        e.libraryDesc.NumExports = 1;
+        e.libraryDesc.pExports = &e.exportDesc;
+
+        e.subobject.Type = D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY;
+        e.subobject.pDesc = &e.libraryDesc;
+
+        subobjects.push_back(e.subobject);
+    }
+
+    // Hit group
+    D3D12_HIT_GROUP_DESC hitGroupDesc{};
+    hitGroupDesc.HitGroupExport = L"HitGroup";
+    hitGroupDesc.ClosestHitShaderImport = L"ClosestHit";
+    hitGroupDesc.AnyHitShaderImport = nullptr;
+    hitGroupDesc.IntersectionShaderImport = nullptr;
+
+    D3D12_STATE_SUBOBJECT hitGroupSubobject{};
+    hitGroupSubobject.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
+    hitGroupSubobject.pDesc = &hitGroupDesc;
+
+    subobjects.push_back(hitGroupSubobject);
+
+    // Shader configuration
+    D3D12_RAYTRACING_SHADER_CONFIG shaderConfig{};
+    shaderConfig.MaxPayloadSizeInBytes = 4 * sizeof(float); // RGB + distance
+    shaderConfig.MaxAttributeSizeInBytes = 2 * sizeof(float); // barycentric coordinates;
+
+    D3D12_STATE_SUBOBJECT shaderConfigSubobject{};
+    shaderConfigSubobject.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG;
+    shaderConfigSubobject.pDesc = &shaderConfig;
+
+    subobjects.push_back(shaderConfigSubobject);
+
+    // Subobject to export association
+    const std::vector<std::wstring> exportedSymbols{L"RayGen", L"Miss", L"HitGroup"};
+    std::vector<LPCWSTR> exportedSymbolPointers{
+        exportedSymbols[0].c_str(),
+        exportedSymbols[1].c_str(),
+        exportedSymbols[2].c_str()};
+
+    D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION shaderPayloadAssociation{};
+    shaderPayloadAssociation.NumExports = static_cast<UINT>(exportedSymbols.size());
+    shaderPayloadAssociation.pExports = exportedSymbolPointers.data();
+    shaderPayloadAssociation.pSubobjectToAssociate = &subobjects.back();
+
+    D3D12_STATE_SUBOBJECT shaderPayloadAssociationSubobject{};
+    shaderPayloadAssociationSubobject.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+    shaderPayloadAssociationSubobject.pDesc = &shaderPayloadAssociation;
+    subobjects.push_back(shaderPayloadAssociationSubobject);
+
+    // Root signature associations
+    struct RootSignatureAssociation
+    {
+        ID3D12RootSignature* rootSig;
+        LPCWSTR symbolPointer;
+        D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION association{};
+    };
+
+    std::vector<RootSignatureAssociation> rootSigAssociations{
+        {m_rayGenRootSignature.Get(), L"RayGen"},
+        {m_missRootSignature.Get(), L"Miss"},
+        {m_hitRootSignature.Get(), L"HitGroup"}};
+
+    for (RootSignatureAssociation& rsa : rootSigAssociations)
+    {
+        D3D12_STATE_SUBOBJECT rootSigSubobject{};
+        rootSigSubobject.Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+        rootSigSubobject.pDesc = &rsa.rootSig;
+
+        subobjects.push_back(rootSigSubobject);
+
+        rsa.association.NumExports = 1;
+        rsa.association.pExports = &rsa.symbolPointer;
+        rsa.association.pSubobjectToAssociate = &subobjects.back();
+
+        D3D12_STATE_SUBOBJECT rootSigAssociationSubobject{};
+        rootSigAssociationSubobject.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
+        rootSigAssociationSubobject.pDesc = &rsa.association;
+
+        subobjects.push_back(rootSigAssociationSubobject);
+    }
+
+    // The pipeline construction always requires an empty global root signature
+    D3D12_STATE_SUBOBJECT globalRootSig{};
+    globalRootSig.Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
+    ID3D12RootSignature* dummyGlobalRootSig = m_dummyGlobalRootSignature.Get();
+    globalRootSig.pDesc = &dummyGlobalRootSig;
+
+    subobjects.push_back(globalRootSig);
+
+    // The pipeline construction always requires an empty local root signature
+    D3D12_STATE_SUBOBJECT localRootSig{};
+    localRootSig.Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
+    ID3D12RootSignature* dummyLocalRootSig = m_dummyLocalRootSignature.Get();
+    localRootSig.pDesc = &dummyLocalRootSig;
+
+    subobjects.push_back(localRootSig);
+
+    // Ray tracing pipeline configuration
+    D3D12_RAYTRACING_PIPELINE_CONFIG pipelineConfig{};
+    pipelineConfig.MaxTraceRecursionDepth = 1;
+
+    D3D12_STATE_SUBOBJECT pipelineConfigObject{};
+    pipelineConfigObject.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
+    pipelineConfigObject.pDesc = &pipelineConfig;
+
+    subobjects.push_back(pipelineConfigObject);
+
+    // Create the state object
+    D3D12_STATE_OBJECT_DESC stateObjectDesc{};
+    stateObjectDesc.Type = D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE;
+    stateObjectDesc.NumSubobjects = subobjectCount;
+    stateObjectDesc.pSubobjects = subobjects.data();
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    HRESULT hr = device->CreateStateObject(&stateObjectDesc, IID_PPV_ARGS(&m_stateObject));
+    CHECK(hr);
 }

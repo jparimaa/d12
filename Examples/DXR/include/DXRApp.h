@@ -50,6 +50,10 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rayGenRootSignature;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_missRootSignature;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_hitRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_dummyLocalRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_dummyGlobalRootSignature;
+
+    Microsoft::WRL::ComPtr<ID3D12StateObject> m_stateObject;
 
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
@@ -57,6 +61,8 @@ private:
     void createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
     void createShaders();
     void createRayGenRootSignature();
-    void createEmptyRootSignature(Microsoft::WRL::ComPtr<ID3D12RootSignature>& rootSignature);
-    void createPSO();
+    void createMissRootSignature();
+    void createHitRootSignature();
+    void createDummyRootSignatures();
+    void createStateObject();
 };
