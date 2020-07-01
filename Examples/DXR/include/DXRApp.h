@@ -55,6 +55,9 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12StateObject> m_stateObject;
 
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_outputBuffer;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvUavHeap;
+
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
     void createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
@@ -65,4 +68,6 @@ private:
     void createHitRootSignature();
     void createDummyRootSignatures();
     void createStateObject();
+    void createOutputBuffer();
+    void createDescriptorHeap();
 };

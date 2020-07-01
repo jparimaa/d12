@@ -105,6 +105,8 @@ bool DXRApp::initialize()
     createHitRootSignature();
     createDummyRootSignatures();
     createStateObject();
+    createOutputBuffer();
+    createDescriptorHeap();
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -645,4 +647,49 @@ void DXRApp::createStateObject()
     Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
     HRESULT hr = device->CreateStateObject(&stateObjectDesc, IID_PPV_ARGS(&m_stateObject));
     CHECK(hr);
+}
+
+void DXRApp::createOutputBuffer()
+{
+    D3D12_RESOURCE_DESC resourceDesc{};
+    resourceDesc.DepthOrArraySize = 1;
+    resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    resourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    resourceDesc.Width = fw::API::getWindowWidth();
+    resourceDesc.Height = fw::API::getWindowHeight();
+    resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    resourceDesc.MipLevels = 1;
+    resourceDesc.SampleDesc.Count = 1;
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    CHECK(device->CreateCommittedResource(&c_defaultHeapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr, IID_PPV_ARGS(&m_outputBuffer)));
+}
+
+void DXRApp::createDescriptorHeap()
+{
+    D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
+    heapDesc.NumDescriptors = 2;
+    heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    CHECK(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_srvUavHeap)));
+
+    // Add output buffer as SRV
+    D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = m_srvUavHeap->GetCPUDescriptorHandleForHeapStart();
+
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    device->CreateUnorderedAccessView(m_outputBuffer.Get(), nullptr, &uavDesc, srvHandle);
+
+    // Add TLAS SRV right after the output buffer
+    srvHandle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+    srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.RaytracingAccelerationStructure.Location = m_tlasBuffer->GetGPUVirtualAddress();
+    device->CreateShaderResourceView(nullptr, &srvDesc, srvHandle);
 }
