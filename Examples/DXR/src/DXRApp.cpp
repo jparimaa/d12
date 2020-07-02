@@ -107,6 +107,7 @@ bool DXRApp::initialize()
     createStateObject();
     createOutputBuffer();
     createDescriptorHeap();
+    createShaderBindingTable();
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -692,4 +693,90 @@ void DXRApp::createDescriptorHeap()
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.RaytracingAccelerationStructure.Location = m_tlasBuffer->GetGPUVirtualAddress();
     device->CreateShaderResourceView(nullptr, &srvDesc, srvHandle);
+}
+
+void DXRApp::createShaderBindingTable()
+{
+    uint32_t entrySize = 0;
+    const uint32_t byteAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
+
+    entrySize = byteAlignment + 8 * 1; // 1x heap pointer
+    const uint32_t rayGenEntrySize = ROUND_UP(entrySize, byteAlignment);
+    const UINT numRayGenEntries = 1;
+
+    entrySize = byteAlignment + 8 * 0;
+    const uint32_t missEntrySize = ROUND_UP(entrySize, byteAlignment);
+    const UINT numMissEntries = 1;
+
+    entrySize = byteAlignment + 8 * static_cast<uint32_t>(m_renderObjects.size()); // vertex buffers
+    const uint32_t hitGroupEntrySize = ROUND_UP(entrySize, byteAlignment);
+    const UINT numHitEntries = 1;
+
+    const uint32_t totalSize = //
+        rayGenEntrySize * numRayGenEntries + //
+        missEntrySize * numMissEntries + //
+        hitGroupEntrySize * numHitEntries;
+
+    const uint32_t sbtSize = ROUND_UP(totalSize, 256);
+
+    D3D12_RESOURCE_DESC bufDesc{};
+    bufDesc.Alignment = 0;
+    bufDesc.DepthOrArraySize = 1;
+    bufDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    bufDesc.Format = DXGI_FORMAT_UNKNOWN;
+    bufDesc.Height = 1;
+    bufDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bufDesc.MipLevels = 1;
+    bufDesc.SampleDesc.Count = 1;
+    bufDesc.SampleDesc.Quality = 0;
+    bufDesc.Width = sbtSize;
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    CHECK(device->CreateCommittedResource(&c_uploadHeapProps,
+                                          D3D12_HEAP_FLAG_NONE,
+                                          &bufDesc,
+                                          D3D12_RESOURCE_STATE_GENERIC_READ,
+                                          nullptr,
+                                          IID_PPV_ARGS(&m_sbtBuffer)));
+
+    struct SBTEntry
+    {
+        std::wstring entryPoint;
+        std::vector<void*> inputData;
+    };
+
+    auto copyShaderData = [](ID3D12StateObjectProperties* properties, uint8_t*& outputData, const SBTEntry& sbtEntry, uint32_t entrySize) {
+        void* id = properties->GetShaderIdentifier(sbtEntry.entryPoint.c_str());
+        CHECK(id && "Unknown shader identifier");
+        const uint32_t byteAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
+        memcpy(outputData, id, byteAlignment);
+        outputData += byteAlignment;
+        memcpy(outputData, sbtEntry.inputData.data(), sbtEntry.inputData.size() * 8);
+        outputData += (sbtEntry.inputData.size() * 8);
+    };
+
+    Microsoft::WRL::ComPtr<ID3D12StateObjectProperties> stateObjectProperties;
+    CHECK(m_stateObject->QueryInterface(IID_PPV_ARGS(&stateObjectProperties)));
+
+    uint8_t* mappedData;
+    CHECK(m_sbtBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
+
+    D3D12_GPU_DESCRIPTOR_HANDLE srvUavHeapHandle = m_srvUavHeap->GetGPUDescriptorHandleForHeapStart();
+    UINT64* heapPointer = reinterpret_cast<UINT64*>(srvUavHeapHandle.ptr);
+
+    SBTEntry rayGen{L"RayGen", {heapPointer}};
+    SBTEntry miss{L"Miss", {}};
+    SBTEntry hitGroup{L"HitGroup", {}};
+
+    for (const RenderObject& ro : m_renderObjects)
+    {
+        hitGroup.inputData.push_back((void*)(ro.vertexBuffer->GetGPUVirtualAddress()));
+    }
+
+    copyShaderData(stateObjectProperties.Get(), mappedData, rayGen, rayGenEntrySize);
+    copyShaderData(stateObjectProperties.Get(), mappedData, miss, missEntrySize);
+    copyShaderData(stateObjectProperties.Get(), mappedData, hitGroup, hitGroupEntrySize);
+
+    m_sbtBuffer->Unmap(0, nullptr);
 }

@@ -57,6 +57,7 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12Resource> m_outputBuffer;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvUavHeap;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_sbtBuffer;
 
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
@@ -70,4 +71,5 @@ private:
     void createStateObject();
     void createOutputBuffer();
     void createDescriptorHeap();
+    void createShaderBindingTable();
 };
