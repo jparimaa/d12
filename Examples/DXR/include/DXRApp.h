@@ -59,6 +59,16 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvUavHeap;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_sbtBuffer;
 
+    UINT m_rayGenEntrySize = 0;
+    UINT m_rayGenSectionSize = 0;
+    UINT m_missEntrySize = 0;
+    UINT m_missSectionSize = 0;
+    UINT m_hitEntrySize = 0;
+    UINT m_hitSectionSize = 0;
+
+    D3D12_VIEWPORT m_viewport;
+    D3D12_RECT m_scissorRect;
+
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
     void createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);

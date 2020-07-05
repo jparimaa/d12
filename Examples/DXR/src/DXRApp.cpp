@@ -109,6 +109,19 @@ bool DXRApp::initialize()
     createDescriptorHeap();
     createShaderBindingTable();
 
+    int windowWidth = fw::API::getWindowWidth();
+    int windowHeight = fw::API::getWindowHeight();
+
+    m_viewport = {};
+    m_viewport.TopLeftX = 0;
+    m_viewport.TopLeftY = 0;
+    m_viewport.Width = static_cast<float>(windowWidth);
+    m_viewport.Height = static_cast<float>(windowHeight);
+    m_viewport.MinDepth = 0.0f;
+    m_viewport.MaxDepth = 1.0f;
+
+    m_scissorRect = {0, 0, windowWidth, windowHeight};
+
     // Execute and wait initialization commands
     CHECK(commandList->Close());
     fw::API::completeInitialization();
@@ -126,6 +139,72 @@ void DXRApp::update()
 
 void DXRApp::fillCommandList()
 {
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator = fw::API::getCurrentFrameCommandAllocator();
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> commandList = fw::API::getCommandList();
+
+    CHECK(commandAllocator->Reset());
+    CHECK(commandList->Reset(commandAllocator.Get(), nullptr));
+
+    commandList->RSSetViewports(1, &m_viewport);
+    commandList->RSSetScissorRects(1, &m_scissorRect);
+
+    std::vector<ID3D12DescriptorHeap*> heaps = {m_srvUavHeap.Get()};
+    commandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
+
+    CD3DX12_RESOURCE_BARRIER transition = CD3DX12_RESOURCE_BARRIER::Transition( //
+        m_outputBuffer.Get(), //
+        D3D12_RESOURCE_STATE_COPY_SOURCE, //
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    commandList->ResourceBarrier(1, &transition);
+
+    D3D12_DISPATCH_RAYS_DESC dispatchRaysDesc{};
+    D3D12_GPU_VIRTUAL_ADDRESS sbtAddress = m_sbtBuffer->GetGPUVirtualAddress();
+    // The ray generation shaders are always at the beginning of the SBT.
+    dispatchRaysDesc.RayGenerationShaderRecord.StartAddress = sbtAddress;
+    dispatchRaysDesc.RayGenerationShaderRecord.SizeInBytes = m_rayGenSectionSize;
+
+    // The miss shaders are in the second SBT section
+    dispatchRaysDesc.MissShaderTable.StartAddress = sbtAddress + m_rayGenSectionSize;
+    dispatchRaysDesc.MissShaderTable.SizeInBytes = m_missSectionSize;
+    dispatchRaysDesc.MissShaderTable.StrideInBytes = m_missEntrySize;
+
+    // The hit groups section start after the miss shaders
+    dispatchRaysDesc.HitGroupTable.StartAddress = sbtAddress + m_rayGenSectionSize + m_missSectionSize;
+    dispatchRaysDesc.HitGroupTable.SizeInBytes = m_hitSectionSize;
+    dispatchRaysDesc.HitGroupTable.StrideInBytes = m_hitEntrySize;
+
+    dispatchRaysDesc.Width = fw::API::getWindowWidth();
+    dispatchRaysDesc.Height = fw::API::getWindowHeight();
+    dispatchRaysDesc.Depth = 1;
+
+    commandList->SetPipelineState1(m_stateObject.Get());
+    commandList->DispatchRays(&dispatchRaysDesc);
+
+    transition = CD3DX12_RESOURCE_BARRIER::Transition( //
+        m_outputBuffer.Get(), //
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, //
+        D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+    commandList->ResourceBarrier(1, &transition);
+
+    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
+
+    transition = CD3DX12_RESOURCE_BARRIER::Transition( //
+        currentBackBuffer, //
+        D3D12_RESOURCE_STATE_PRESENT, //
+        D3D12_RESOURCE_STATE_COPY_DEST);
+
+    commandList->ResourceBarrier(1, &transition);
+
+    commandList->CopyResource(currentBackBuffer, m_outputBuffer.Get());
+
+    transition = CD3DX12_RESOURCE_BARRIER::Transition( //
+        currentBackBuffer, //
+        D3D12_RESOURCE_STATE_COPY_DEST, //
+        D3D12_RESOURCE_STATE_PRESENT);
+    commandList->ResourceBarrier(1, &transition);
+
+    CHECK(commandList->Close());
 }
 
 void DXRApp::onGUI()
@@ -701,21 +780,22 @@ void DXRApp::createShaderBindingTable()
     const uint32_t byteAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
 
     entrySize = byteAlignment + 8 * 1; // 1x heap pointer
-    const uint32_t rayGenEntrySize = ROUND_UP(entrySize, byteAlignment);
+    const uint32_t m_rayGenEntrySize = ROUND_UP(entrySize, byteAlignment);
     const UINT numRayGenEntries = 1;
 
     entrySize = byteAlignment + 8 * 0;
-    const uint32_t missEntrySize = ROUND_UP(entrySize, byteAlignment);
+    const uint32_t m_missEntrySize = ROUND_UP(entrySize, byteAlignment);
     const UINT numMissEntries = 1;
 
     entrySize = byteAlignment + 8 * static_cast<uint32_t>(m_renderObjects.size()); // vertex buffers
-    const uint32_t hitGroupEntrySize = ROUND_UP(entrySize, byteAlignment);
+    const uint32_t m_hitGroupEntrySize = ROUND_UP(entrySize, byteAlignment);
     const UINT numHitEntries = 1;
 
-    const uint32_t totalSize = //
-        rayGenEntrySize * numRayGenEntries + //
-        missEntrySize * numMissEntries + //
-        hitGroupEntrySize * numHitEntries;
+    UINT m_rayGenSectionSize = m_rayGenEntrySize * numRayGenEntries;
+    UINT m_missSectionSize = m_missEntrySize * numMissEntries;
+    UINT m_hitSectionSize = m_hitGroupEntrySize * numHitEntries;
+
+    const uint32_t totalSize = m_rayGenSectionSize + m_missSectionSize + m_hitSectionSize;
 
     const uint32_t sbtSize = ROUND_UP(totalSize, 256);
 
@@ -774,9 +854,9 @@ void DXRApp::createShaderBindingTable()
         hitGroup.inputData.push_back((void*)(ro.vertexBuffer->GetGPUVirtualAddress()));
     }
 
-    copyShaderData(stateObjectProperties.Get(), mappedData, rayGen, rayGenEntrySize);
-    copyShaderData(stateObjectProperties.Get(), mappedData, miss, missEntrySize);
-    copyShaderData(stateObjectProperties.Get(), mappedData, hitGroup, hitGroupEntrySize);
+    copyShaderData(stateObjectProperties.Get(), mappedData, rayGen, m_rayGenEntrySize);
+    copyShaderData(stateObjectProperties.Get(), mappedData, miss, m_missEntrySize);
+    copyShaderData(stateObjectProperties.Get(), mappedData, hitGroup, m_hitGroupEntrySize);
 
     m_sbtBuffer->Unmap(0, nullptr);
 }
