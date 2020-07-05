@@ -148,6 +148,13 @@ void DXRApp::fillCommandList()
     commandList->RSSetViewports(1, &m_viewport);
     commandList->RSSetScissorRects(1, &m_scissorRect);
 
+    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
+    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
+    const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
+    commandList->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
+
     std::vector<ID3D12DescriptorHeap*> heaps = {m_srvUavHeap.Get()};
     commandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
 
@@ -155,6 +162,7 @@ void DXRApp::fillCommandList()
         m_outputBuffer.Get(), //
         D3D12_RESOURCE_STATE_COPY_SOURCE, //
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
     commandList->ResourceBarrier(1, &transition);
 
     D3D12_DISPATCH_RAYS_DESC dispatchRaysDesc{};
@@ -187,11 +195,9 @@ void DXRApp::fillCommandList()
 
     commandList->ResourceBarrier(1, &transition);
 
-    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
-
     transition = CD3DX12_RESOURCE_BARRIER::Transition( //
         currentBackBuffer, //
-        D3D12_RESOURCE_STATE_PRESENT, //
+        D3D12_RESOURCE_STATE_RENDER_TARGET, //
         D3D12_RESOURCE_STATE_COPY_DEST);
 
     commandList->ResourceBarrier(1, &transition);
