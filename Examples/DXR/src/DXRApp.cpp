@@ -4,6 +4,7 @@
 #include <fw/Common.h>
 #include <fw/API.h>
 #include <fw/Macros.h>
+#include <fw/Transformation.h>
 #include <GLFW/glfw3.h>
 
 #include <minwinbase.h>
@@ -227,7 +228,19 @@ void DXRApp::createVertexBuffers(const fw::Model& model,
 {
     Microsoft::WRL::ComPtr<ID3D12Device5> d3dDevice = fw::API::getD3dDevice();
 
-    const fw::Model::Meshes& meshes = model.getMeshes();
+    float aspectRatio = fw::API::getAspectRatio();
+    fw::Mesh triangle;
+    triangle.positions = std::vector<DirectX::XMFLOAT3>{{0.0f, 0.25f * aspectRatio, 0.0f}, //
+                                                        {0.25f, -0.25f * aspectRatio, 0.0f}, //
+                                                        {-0.25f, -0.25f * aspectRatio, 0.0f}};
+    triangle.normals.resize(3);
+    triangle.tangents.resize(3);
+    triangle.uvs.resize(3);
+    triangle.indices = {0, 1, 2};
+
+    fw::Model::Meshes meshes = model.getMeshes();
+    meshes.push_back(triangle);
+
     const size_t numMeshes = meshes.size();
     vertexUploadBuffers.resize(numMeshes);
     m_renderObjects.resize(numMeshes);
@@ -420,6 +433,11 @@ void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
         instanceDescs[i].InstanceContributionToHitGroupIndex = 0;
         instanceDescs[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
 
+        /*
+        fw::Transformation transformation;
+        transformation.setPosition(0.0f, 0.0f, -50.0f);
+        DirectX::XMMATRIX m = transformation.updateWorldMatrix();
+        */
         DirectX::XMMATRIX m = DirectX::XMMatrixIdentity();
         memcpy(instanceDescs[i].Transform, &m, sizeof(instanceDescs[i].Transform));
         instanceDescs[i].AccelerationStructure = m_blasBuffer->GetGPUVirtualAddress();
@@ -787,6 +805,7 @@ void DXRApp::createShaderBindingTable()
 
     entrySize = byteAlignment + 8 * 0;
     m_missEntrySize = ROUND_UP(entrySize, byteAlignment);
+    m_missEntrySize = max(m_missEntrySize, 64);
     const UINT numMissEntries = 1;
 
     entrySize = byteAlignment + 8 * static_cast<uint32_t>(m_renderObjects.size()); // vertex buffers
@@ -833,9 +852,8 @@ void DXRApp::createShaderBindingTable()
         CHECK(id && "Unknown shader identifier");
         const uint32_t byteAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
         memcpy(outputData, id, byteAlignment);
-        outputData += byteAlignment;
-        memcpy(outputData, sbtEntry.inputData.data(), sbtEntry.inputData.size() * 8);
-        outputData += (sbtEntry.inputData.size() * 8);
+        memcpy(outputData + byteAlignment, sbtEntry.inputData.data(), sbtEntry.inputData.size() * 8);
+        outputData += entrySize;
     };
 
     Microsoft::WRL::ComPtr<ID3D12StateObjectProperties> stateObjectProperties;
