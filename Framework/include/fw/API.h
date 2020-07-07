@@ -23,11 +23,11 @@ public:
     static int getWindowHeight();
     static float getAspectRatio();
 
-    static Microsoft::WRL::ComPtr<ID3D12Device> getD3dDevice();
+    static Microsoft::WRL::ComPtr<ID3D12Device5> getD3dDevice();
     static Microsoft::WRL::ComPtr<ID3D12CommandQueue> getCommandQueue();
     static Microsoft::WRL::ComPtr<ID3D12CommandAllocator> getCommandAllocator();
     static Microsoft::WRL::ComPtr<ID3D12CommandAllocator> getCurrentFrameCommandAllocator();
-    static Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> getCommandList();
+    static Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> getCommandList();
 
     static int getCurrentFrameIndex();
     static int getSwapChainBufferCount();

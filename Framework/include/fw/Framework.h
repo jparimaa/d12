@@ -40,7 +40,7 @@ private:
     Application* m_app = nullptr;
 
     Microsoft::WRL::ComPtr<IDXGIFactory4> m_dxgiFactory;
-    Microsoft::WRL::ComPtr<ID3D12Device> m_d3dDevice;
+    Microsoft::WRL::ComPtr<ID3D12Device5> m_d3dDevice;
 
     Microsoft::WRL::ComPtr<ID3D12Fence> m_fence;
     UINT64 m_currentFenceId = 100;
@@ -53,7 +53,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_commandQueue;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_commandAllocator;
     std::vector<Microsoft::WRL::ComPtr<ID3D12CommandAllocator>> m_frameCommandAllocators;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_commandList;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> m_commandList;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
