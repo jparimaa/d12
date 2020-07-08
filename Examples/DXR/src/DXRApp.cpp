@@ -18,6 +18,7 @@ namespace
 {
 const D3D12_HEAP_PROPERTIES c_defaultHeapProps = {D3D12_HEAP_TYPE_DEFAULT, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_MEMORY_POOL_UNKNOWN, 0, 0};
 const D3D12_HEAP_PROPERTIES c_uploadHeapProps = {D3D12_HEAP_TYPE_UPLOAD, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_MEMORY_POOL_UNKNOWN, 0, 0};
+const UINT c_cameraBufferSize = 2 * sizeof(DirectX::XMMATRIX);
 
 bool hasDXRSupport()
 {
@@ -107,6 +108,7 @@ bool DXRApp::initialize()
     createDummyRootSignatures();
     createStateObject();
     createOutputBuffer();
+    createCameraBuffer();
     createDescriptorHeap();
     createShaderBindingTable();
 
@@ -127,11 +129,26 @@ bool DXRApp::initialize()
     CHECK(commandList->Close());
     fw::API::completeInitialization();
 
+    m_cameraController.setCamera(&m_camera);
+    m_camera.getTransformation().setPosition(0.0f, 0.0f, -50.0f);
+
     return status;
 }
 
 void DXRApp::update()
 {
+    m_cameraController.update();
+    m_camera.updateViewMatrix();
+
+    DirectX::XMMATRIX matrices[2] = {
+        DirectX::XMMatrixInverse(nullptr, m_camera.getViewMatrix()),
+        DirectX::XMMatrixInverse(nullptr, m_camera.getProjectionMatrix())};
+
+    char* mappedData = nullptr;
+    CHECK(m_cameraBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
+    memcpy(&mappedData[0], &matrices, c_cameraBufferSize);
+    m_cameraBuffer->Unmap(0, nullptr);
+
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
     {
         fw::API::quit();
@@ -489,7 +506,14 @@ void DXRApp::createRayGenRootSignature()
     tlasDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // RaytracingAccelerationStructure
     tlasDesc.OffsetInDescriptorsFromTableStart = 1;
 
-    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc, tlasDesc};
+    D3D12_DESCRIPTOR_RANGE cameraDesc{};
+    cameraDesc.BaseShaderRegister = 0; // b0
+    cameraDesc.NumDescriptors = 1;
+    cameraDesc.RegisterSpace = 0; // implicit register space 0
+    cameraDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
+    cameraDesc.OffsetInDescriptorsFromTableStart = 2;
+
+    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc, tlasDesc, cameraDesc};
 
     D3D12_ROOT_PARAMETER rootParameter{};
     rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -766,10 +790,35 @@ void DXRApp::createOutputBuffer()
     CHECK(device->CreateCommittedResource(&c_defaultHeapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr, IID_PPV_ARGS(&m_outputBuffer)));
 }
 
+void DXRApp::createCameraBuffer()
+{
+    D3D12_RESOURCE_DESC bufferDesc{};
+    bufferDesc.Alignment = 0;
+    bufferDesc.DepthOrArraySize = 1;
+    bufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    bufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    bufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+    bufferDesc.Height = 1;
+    bufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bufferDesc.MipLevels = 1;
+    bufferDesc.SampleDesc.Count = 1;
+    bufferDesc.SampleDesc.Quality = 0;
+    bufferDesc.Width = fw::roundUpByteSize(c_cameraBufferSize);
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+
+    CHECK(device->CreateCommittedResource(&c_uploadHeapProps,
+                                          D3D12_HEAP_FLAG_NONE,
+                                          &bufferDesc,
+                                          D3D12_RESOURCE_STATE_GENERIC_READ,
+                                          nullptr,
+                                          IID_PPV_ARGS(&m_cameraBuffer)));
+}
+
 void DXRApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
-    heapDesc.NumDescriptors = 2;
+    heapDesc.NumDescriptors = 2 + 3;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -783,7 +832,7 @@ void DXRApp::createDescriptorHeap()
     uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
     device->CreateUnorderedAccessView(m_outputBuffer.Get(), nullptr, &uavDesc, srvHandle);
 
-    // Add TLAS SRV right after the output buffer
+    // Add TLAS SRV after the output buffer
     srvHandle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
@@ -792,6 +841,14 @@ void DXRApp::createDescriptorHeap()
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.RaytracingAccelerationStructure.Location = m_tlasBuffer->GetGPUVirtualAddress();
     device->CreateShaderResourceView(nullptr, &srvDesc, srvHandle);
+
+    // Add camera buffer after TLAS
+    srvHandle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
+    cbvDesc.SizeInBytes = fw::roundUpByteSize(c_cameraBufferSize);
+    cbvDesc.BufferLocation = m_cameraBuffer->GetGPUVirtualAddress();
+    device->CreateConstantBufferView(&cbvDesc, srvHandle);
 }
 
 void DXRApp::createShaderBindingTable()

@@ -2,6 +2,8 @@
 
 #include <fw/Application.h>
 #include <fw/Model.h>
+#include <fw/Camera.h>
+#include <fw/CameraController.h>
 
 #include <wrl.h>
 #include "d3dx12.h"
@@ -56,6 +58,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12StateObject> m_stateObject;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> m_outputBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_cameraBuffer;
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvUavHeap;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_sbtBuffer;
 
@@ -69,6 +72,9 @@ private:
     D3D12_VIEWPORT m_viewport;
     D3D12_RECT m_scissorRect;
 
+    fw::Camera m_camera;
+    fw::CameraController m_cameraController;
+
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
     void createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
@@ -80,6 +86,7 @@ private:
     void createDummyRootSignatures();
     void createStateObject();
     void createOutputBuffer();
+    void createCameraBuffer();
     void createDescriptorHeap();
     void createShaderBindingTable();
 };
