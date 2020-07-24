@@ -18,7 +18,8 @@ namespace
 {
 const D3D12_HEAP_PROPERTIES c_defaultHeapProps = {D3D12_HEAP_TYPE_DEFAULT, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_MEMORY_POOL_UNKNOWN, 0, 0};
 const D3D12_HEAP_PROPERTIES c_uploadHeapProps = {D3D12_HEAP_TYPE_UPLOAD, D3D12_CPU_PAGE_PROPERTY_UNKNOWN, D3D12_MEMORY_POOL_UNKNOWN, 0, 0};
-const UINT c_cameraBufferSize = 2 * sizeof(DirectX::XMMATRIX);
+const uint32_t c_cameraBufferSize = 2 * sizeof(DirectX::XMMATRIX);
+constexpr uint32_t c_alignedCameraBufferSize = fw::roundUpByteSize(c_cameraBufferSize);
 
 bool hasDXRSupport()
 {
@@ -84,6 +85,22 @@ IDxcBlob* compileDXRShader(LPCWSTR fileName)
     CHECK(result->GetResult(&blob));
     return blob;
 }
+
+void serializeAndCreateRootSignature(const D3D12_ROOT_SIGNATURE_DESC& desc, Microsoft::WRL::ComPtr<ID3D12RootSignature>& rootSig)
+{
+    Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+    HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
+
+    if (errorBlob)
+    {
+        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+        CHECK(hr);
+    }
+
+    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
+    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSig)));
+}
 } // namespace
 
 bool DXRApp::initialize()
@@ -105,7 +122,8 @@ bool DXRApp::initialize()
     createRayGenRootSignature();
     createMissRootSignature();
     createHitRootSignature();
-    createDummyRootSignatures();
+    createGlobalRootSignature();
+    createDummyRootSignature();
     createStateObject();
     createOutputBuffer();
     createCameraBuffer();
@@ -140,13 +158,14 @@ void DXRApp::update()
     m_cameraController.update();
     m_camera.updateViewMatrix();
 
-    DirectX::XMMATRIX matrices[2] = {
+    std::vector<DirectX::XMMATRIX> matrices{
         DirectX::XMMatrixInverse(nullptr, m_camera.getViewMatrix()),
         DirectX::XMMatrixInverse(nullptr, m_camera.getProjectionMatrix())};
 
+    int frameIndex = fw::API::getCurrentFrameIndex();
     char* mappedData = nullptr;
     CHECK(m_cameraBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
-    memcpy(&mappedData[0], &matrices, c_cameraBufferSize);
+    memcpy(&mappedData[frameIndex * c_alignedCameraBufferSize], matrices.data(), c_cameraBufferSize);
     m_cameraBuffer->Unmap(0, nullptr);
 
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
@@ -204,18 +223,25 @@ void DXRApp::fillCommandList()
     dispatchRaysDesc.Height = fw::API::getWindowHeight();
     dispatchRaysDesc.Depth = 1;
 
+    int frameIndex = fw::API::getCurrentFrameIndex();
+    commandList->SetComputeRootSignature(m_globalRootSignature.Get());
+    auto cbvAddress = m_cameraBuffer->GetGPUVirtualAddress() + frameIndex * c_alignedCameraBufferSize;
+    commandList->SetComputeRootConstantBufferView(0, cbvAddress);
+
     commandList->SetPipelineState1(m_stateObject.Get());
     commandList->DispatchRays(&dispatchRaysDesc);
 
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition( //
-                                        m_outputBuffer.Get(), //
-                                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, //
-                                        D3D12_RESOURCE_STATE_COPY_SOURCE));
+    D3D12_RESOURCE_BARRIER barriers[2] = {
+        CD3DX12_RESOURCE_BARRIER::Transition( //
+            m_outputBuffer.Get(), //
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS, //
+            D3D12_RESOURCE_STATE_COPY_SOURCE),
+        CD3DX12_RESOURCE_BARRIER::Transition( //
+            currentBackBuffer, //
+            D3D12_RESOURCE_STATE_RENDER_TARGET, //
+            D3D12_RESOURCE_STATE_COPY_DEST)};
 
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition( //
-                                        currentBackBuffer, //
-                                        D3D12_RESOURCE_STATE_RENDER_TARGET, //
-                                        D3D12_RESOURCE_STATE_COPY_DEST));
+    commandList->ResourceBarrier(2, barriers);
 
     commandList->CopyResource(currentBackBuffer, m_outputBuffer.Get());
 
@@ -506,14 +532,7 @@ void DXRApp::createRayGenRootSignature()
     tlasDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // RaytracingAccelerationStructure
     tlasDesc.OffsetInDescriptorsFromTableStart = 1;
 
-    D3D12_DESCRIPTOR_RANGE cameraDesc{};
-    cameraDesc.BaseShaderRegister = 0; // b0
-    cameraDesc.NumDescriptors = 1;
-    cameraDesc.RegisterSpace = 0; // implicit register space 0
-    cameraDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-    cameraDesc.OffsetInDescriptorsFromTableStart = 2;
-
-    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc, tlasDesc, cameraDesc};
+    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc, tlasDesc};
 
     D3D12_ROOT_PARAMETER rootParameter{};
     rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -526,8 +545,8 @@ void DXRApp::createRayGenRootSignature()
     rootSignatureDesc.pParameters = parameters.data();
     rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
-    ID3DBlob* signatureBlob;
-    ID3DBlob* errorBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
     HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
 
     if (errorBlob)
@@ -538,7 +557,6 @@ void DXRApp::createRayGenRootSignature()
 
     Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
     CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_rayGenRootSignature)));
-    signatureBlob->Release();
 }
 
 void DXRApp::createMissRootSignature()
@@ -548,19 +566,7 @@ void DXRApp::createMissRootSignature()
     rootSignatureDesc.pParameters = nullptr;
     rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
-    ID3DBlob* signatureBlob;
-    ID3DBlob* errorBlob;
-    HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
-
-    if (errorBlob)
-    {
-        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-        CHECK(hr);
-    }
-
-    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
-    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_missRootSignature)));
-    signatureBlob->Release();
+    serializeAndCreateRootSignature(rootSignatureDesc, m_missRootSignature);
 }
 
 void DXRApp::createHitRootSignature()
@@ -577,44 +583,34 @@ void DXRApp::createHitRootSignature()
     rootSignatureDesc.pParameters = parameters.data();
     rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
-    ID3DBlob* signatureBlob;
-    ID3DBlob* errorBlob;
-    HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
-
-    if (errorBlob)
-    {
-        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-        CHECK(hr);
-    }
-
-    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
-    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_hitRootSignature)));
-    signatureBlob->Release();
+    serializeAndCreateRootSignature(rootSignatureDesc, m_hitRootSignature);
 }
 
-void DXRApp::createDummyRootSignatures()
+void DXRApp::createGlobalRootSignature()
 {
-    D3D12_ROOT_SIGNATURE_DESC rootDesc{};
-    rootDesc.NumParameters = 0;
-    rootDesc.pParameters = nullptr;
-    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE; // A global root signature is the default, hence this flag
+    D3D12_ROOT_PARAMETER rootParameter{};
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParameter.Descriptor.ShaderRegister = 0;
+    rootParameter.Descriptor.RegisterSpace = 0;
+    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+    std::vector<D3D12_ROOT_PARAMETER> parameters{rootParameter};
 
-    ID3DBlob* signatureBlob;
-    ID3DBlob* errorBlob;
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.NumParameters = static_cast<UINT>(parameters.size());
+    rootSignatureDesc.pParameters = parameters.data();
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
 
-    HRESULT hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    CHECK(hr);
-    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
-    hr = device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_dummyGlobalRootSignature));
-    signatureBlob->Release();
-    CHECK(hr);
+    serializeAndCreateRootSignature(rootSignatureDesc, m_globalRootSignature);
+}
 
-    rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-    hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signatureBlob, &errorBlob);
-    CHECK(hr);
-    hr = device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_dummyLocalRootSignature));
-    signatureBlob->Release();
-    CHECK(hr);
+void DXRApp::createDummyRootSignature()
+{
+    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
+    rootSignatureDesc.NumParameters = 0;
+    rootSignatureDesc.pParameters = nullptr;
+    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
+
+    serializeAndCreateRootSignature(rootSignatureDesc, m_dummyLocalRootSignature);
 }
 
 void DXRApp::createStateObject()
@@ -736,11 +732,11 @@ void DXRApp::createStateObject()
         subobjects.push_back(rootSigAssociationSubobject);
     }
 
-    // The pipeline construction always requires an empty global root signature
+    // Global root signature
     D3D12_STATE_SUBOBJECT globalRootSig{};
     globalRootSig.Type = D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE;
-    ID3D12RootSignature* dummyGlobalRootSig = m_dummyGlobalRootSignature.Get();
-    globalRootSig.pDesc = &dummyGlobalRootSig;
+    ID3D12RootSignature* globalRootSignature = m_globalRootSignature.Get();
+    globalRootSig.pDesc = &globalRootSignature;
 
     subobjects.push_back(globalRootSig);
 
@@ -803,7 +799,7 @@ void DXRApp::createCameraBuffer()
     bufferDesc.MipLevels = 1;
     bufferDesc.SampleDesc.Count = 1;
     bufferDesc.SampleDesc.Quality = 0;
-    bufferDesc.Width = fw::roundUpByteSize(c_cameraBufferSize);
+    bufferDesc.Width = fw::API::getSwapChainBufferCount() * c_alignedCameraBufferSize;
 
     Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
 
@@ -818,7 +814,7 @@ void DXRApp::createCameraBuffer()
 void DXRApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
-    heapDesc.NumDescriptors = 2 + 3;
+    heapDesc.NumDescriptors = 2;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -841,14 +837,6 @@ void DXRApp::createDescriptorHeap()
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.RaytracingAccelerationStructure.Location = m_tlasBuffer->GetGPUVirtualAddress();
     device->CreateShaderResourceView(nullptr, &srvDesc, srvHandle);
-
-    // Add camera buffer after TLAS
-    srvHandle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-
-    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc{};
-    cbvDesc.SizeInBytes = fw::roundUpByteSize(c_cameraBufferSize);
-    cbvDesc.BufferLocation = m_cameraBuffer->GetGPUVirtualAddress();
-    device->CreateConstantBufferView(&cbvDesc, srvHandle);
 }
 
 void DXRApp::createShaderBindingTable()

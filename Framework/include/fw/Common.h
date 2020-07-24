@@ -13,7 +13,11 @@
 
 namespace fw
 {
-uint32_t roundUpByteSize(uint32_t byteSize);
+constexpr uint32_t roundUpByteSize(uint32_t byteSize)
+{
+    return (byteSize + 255) & ~255;
+};
+
 Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::wstring& filename,
                                                const D3D_SHADER_MACRO* defines,
                                                const std::string& entrypoint,
