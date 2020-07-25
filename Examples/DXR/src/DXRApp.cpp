@@ -260,19 +260,7 @@ void DXRApp::createVertexBuffers(const fw::Model& model,
                                  std::vector<VertexUploadBuffers>& vertexUploadBuffers)
 {
     Microsoft::WRL::ComPtr<ID3D12Device5> d3dDevice = fw::API::getD3dDevice();
-
-    float aspectRatio = fw::API::getAspectRatio();
-    fw::Mesh triangle;
-    triangle.positions = std::vector<DirectX::XMFLOAT3>{{0.0f, 0.25f * aspectRatio, 0.0f}, //
-                                                        {0.25f, -0.25f * aspectRatio, 0.0f}, //
-                                                        {-0.25f, -0.25f * aspectRatio, 0.0f}};
-    triangle.normals.resize(3);
-    triangle.tangents.resize(3);
-    triangle.uvs.resize(3);
-    triangle.indices = {0, 1, 2};
-
     fw::Model::Meshes meshes = model.getMeshes();
-    meshes.push_back(triangle);
 
     const size_t numMeshes = meshes.size();
     vertexUploadBuffers.resize(numMeshes);
