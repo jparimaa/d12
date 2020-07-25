@@ -181,27 +181,13 @@ void DXRApp::fillCommandList()
 
     CHECK(commandAllocator->Reset());
     CHECK(commandList->Reset(commandAllocator.Get(), nullptr));
+    commandList->SetName(L"MyCommandList");
 
     commandList->RSSetViewports(1, &m_viewport);
     commandList->RSSetScissorRects(1, &m_scissorRect);
 
-    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition( //
-                                        currentBackBuffer, //
-                                        D3D12_RESOURCE_STATE_PRESENT, //
-                                        D3D12_RESOURCE_STATE_RENDER_TARGET));
-
-    CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
-    const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
-    commandList->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
-
     std::vector<ID3D12DescriptorHeap*> heaps = {m_srvUavHeap.Get()};
     commandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
-
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition( //
-                                        m_outputBuffer.Get(), //
-                                        D3D12_RESOURCE_STATE_COPY_SOURCE, //
-                                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
 
     D3D12_DISPATCH_RAYS_DESC dispatchRaysDesc{};
     D3D12_GPU_VIRTUAL_ADDRESS sbtAddress = m_sbtBuffer->GetGPUVirtualAddress();
@@ -231,24 +217,28 @@ void DXRApp::fillCommandList()
     commandList->SetPipelineState1(m_stateObject.Get());
     commandList->DispatchRays(&dispatchRaysDesc);
 
-    D3D12_RESOURCE_BARRIER barriers[2] = {
-        CD3DX12_RESOURCE_BARRIER::Transition( //
-            m_outputBuffer.Get(), //
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS, //
-            D3D12_RESOURCE_STATE_COPY_SOURCE),
-        CD3DX12_RESOURCE_BARRIER::Transition( //
-            currentBackBuffer, //
-            D3D12_RESOURCE_STATE_RENDER_TARGET, //
-            D3D12_RESOURCE_STATE_COPY_DEST)};
+    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
+    currentBackBuffer->SetName(L"CurrentBackBuffer");
+    m_outputBuffer->SetName(L"Output");
 
+    D3D12_RESOURCE_BARRIER barriers[2];
+    barriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(m_outputBuffer.Get(), //
+                                                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS, //
+                                                       D3D12_RESOURCE_STATE_COPY_SOURCE);
+    barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, //
+                                                       D3D12_RESOURCE_STATE_PRESENT, //
+                                                       D3D12_RESOURCE_STATE_COPY_DEST);
     commandList->ResourceBarrier(2, barriers);
 
     commandList->CopyResource(currentBackBuffer, m_outputBuffer.Get());
 
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition( //
-                                        currentBackBuffer, //
-                                        D3D12_RESOURCE_STATE_COPY_DEST, //
-                                        D3D12_RESOURCE_STATE_PRESENT));
+    barriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(m_outputBuffer.Get(), //
+                                                       D3D12_RESOURCE_STATE_COPY_SOURCE, //
+                                                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, //
+                                                       D3D12_RESOURCE_STATE_COPY_DEST, //
+                                                       D3D12_RESOURCE_STATE_PRESENT);
+    commandList->ResourceBarrier(2, barriers);
 
     CHECK(commandList->Close());
 }
@@ -783,7 +773,7 @@ void DXRApp::createOutputBuffer()
     resourceDesc.SampleDesc.Count = 1;
 
     Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
-    CHECK(device->CreateCommittedResource(&c_defaultHeapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_COPY_SOURCE, nullptr, IID_PPV_ARGS(&m_outputBuffer)));
+    CHECK(device->CreateCommittedResource(&c_defaultHeapProps, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_outputBuffer)));
 }
 
 void DXRApp::createCameraBuffer()
