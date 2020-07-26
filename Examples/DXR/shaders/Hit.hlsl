@@ -8,7 +8,8 @@ struct Vertex
     float2 uv;
 };
 
-StructuredBuffer<Vertex> vertexBuffer : register(t0);
+StructuredBuffer<Vertex> vertexBuffer0 : register(t0);
+StructuredBuffer<Vertex> vertexBuffer1 : register(t1);
 
 [shader("closesthit")] void ClosestHit(inout HitInfo payload,
                                        Attributes attrib) {
@@ -16,6 +17,6 @@ StructuredBuffer<Vertex> vertexBuffer : register(t0);
     float3 hitColor;
     hitColor.x = attrib.bary.x;
     hitColor.y = attrib.bary.y;
-    hitColor.z = vertexBuffer[vertId + 2].position.y;
+    hitColor.z = vertexBuffer0[vertId + 2].position.y;
     payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }

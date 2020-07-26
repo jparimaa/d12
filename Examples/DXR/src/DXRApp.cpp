@@ -123,7 +123,6 @@ bool DXRApp::initialize()
     createMissRootSignature();
     createHitRootSignature();
     createGlobalRootSignature();
-    createDummyRootSignature();
     createStateObject();
     createOutputBuffer();
     createCameraBuffer();
@@ -523,18 +522,7 @@ void DXRApp::createRayGenRootSignature()
     rootSignatureDesc.pParameters = parameters.data();
     rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
 
-    Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob;
-    Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
-    HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
-
-    if (errorBlob)
-    {
-        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-        CHECK(hr);
-    }
-
-    Microsoft::WRL::ComPtr<ID3D12Device5> device = fw::API::getD3dDevice();
-    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&m_rayGenRootSignature)));
+    serializeAndCreateRootSignature(rootSignatureDesc, m_rayGenRootSignature);
 }
 
 void DXRApp::createMissRootSignature()
@@ -549,12 +537,17 @@ void DXRApp::createMissRootSignature()
 
 void DXRApp::createHitRootSignature()
 {
+    std::vector<D3D12_ROOT_PARAMETER> parameters;
+
     D3D12_ROOT_PARAMETER rootParameter{};
     rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
     rootParameter.Descriptor.RegisterSpace = 0;
     rootParameter.Descriptor.ShaderRegister = 0;
     rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    std::vector<D3D12_ROOT_PARAMETER> parameters{rootParameter};
+    parameters.push_back(rootParameter);
+
+    rootParameter.Descriptor.ShaderRegister = 1;
+    parameters.push_back(rootParameter);
 
     D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
     rootSignatureDesc.NumParameters = static_cast<UINT>(parameters.size());
@@ -581,25 +574,14 @@ void DXRApp::createGlobalRootSignature()
     serializeAndCreateRootSignature(rootSignatureDesc, m_globalRootSignature);
 }
 
-void DXRApp::createDummyRootSignature()
-{
-    D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
-    rootSignatureDesc.NumParameters = 0;
-    rootSignatureDesc.pParameters = nullptr;
-    rootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE;
-
-    serializeAndCreateRootSignature(rootSignatureDesc, m_dummyLocalRootSignature);
-}
-
 void DXRApp::createStateObject()
 {
     const UINT64 subobjectCount = //
         3 + // Shaders: RayGen, Miss, ClosestHit
         1 + // Hit group
         1 + // Shader configuration
-        1 + // Shader payload
         2 * 3 + // Root signature declaration + association
-        2 + // Empty global and local root signatures
+        1 + // Global root signature
         1; // Final pipeline subobject
 
     std::vector<D3D12_STATE_SUBOBJECT> subobjects;
@@ -661,23 +643,6 @@ void DXRApp::createStateObject()
 
     subobjects.push_back(shaderConfigSubobject);
 
-    // Subobject to export association
-    const std::vector<std::wstring> exportedSymbols{L"RayGen", L"Miss", L"HitGroup"};
-    std::vector<LPCWSTR> exportedSymbolPointers{
-        exportedSymbols[0].c_str(),
-        exportedSymbols[1].c_str(),
-        exportedSymbols[2].c_str()};
-
-    D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION shaderPayloadAssociation{};
-    shaderPayloadAssociation.NumExports = static_cast<UINT>(exportedSymbols.size());
-    shaderPayloadAssociation.pExports = exportedSymbolPointers.data();
-    shaderPayloadAssociation.pSubobjectToAssociate = &subobjects.back();
-
-    D3D12_STATE_SUBOBJECT shaderPayloadAssociationSubobject{};
-    shaderPayloadAssociationSubobject.Type = D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION;
-    shaderPayloadAssociationSubobject.pDesc = &shaderPayloadAssociation;
-    subobjects.push_back(shaderPayloadAssociationSubobject);
-
     // Root signature associations
     struct RootSignatureAssociation
     {
@@ -717,14 +682,6 @@ void DXRApp::createStateObject()
     globalRootSig.pDesc = &globalRootSignature;
 
     subobjects.push_back(globalRootSig);
-
-    // The pipeline construction always requires an empty local root signature
-    D3D12_STATE_SUBOBJECT localRootSig{};
-    localRootSig.Type = D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE;
-    ID3D12RootSignature* dummyLocalRootSig = m_dummyLocalRootSignature.Get();
-    localRootSig.pDesc = &dummyLocalRootSig;
-
-    subobjects.push_back(localRootSig);
 
     // Ray tracing pipeline configuration
     D3D12_RAYTRACING_PIPELINE_CONFIG pipelineConfig{};

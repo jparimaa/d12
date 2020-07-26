@@ -53,7 +53,6 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_missRootSignature;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_hitRootSignature;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_globalRootSignature;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_dummyLocalRootSignature;
 
     Microsoft::WRL::ComPtr<ID3D12StateObject> m_stateObject;
 
@@ -84,7 +83,6 @@ private:
     void createMissRootSignature();
     void createHitRootSignature();
     void createGlobalRootSignature();
-    void createDummyRootSignature();
     void createStateObject();
     void createOutputBuffer();
     void createCameraBuffer();
