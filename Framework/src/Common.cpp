@@ -5,11 +5,12 @@ namespace fw
 Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::wstring& filename,
                                                const D3D_SHADER_MACRO* defines,
                                                const std::string& entrypoint,
-                                               const std::string& target)
+                                               const std::string& target,
+                                               UINT flags)
 {
-    uint32_t compileFlags = 0;
+    uint32_t compileFlags = flags;
 #if defined(DEBUG) || defined(_DEBUG)
-    compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+    compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #endif
 
     Microsoft::WRL::ComPtr<ID3DBlob> byteCode = nullptr;

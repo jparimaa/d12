@@ -17,14 +17,19 @@ cbuffer cbPerObject : register(b0)
     uint index;
 };
 
-float4x4 worldViewProjs[2] : register(b1);
-Texture2D textures[2] : register(t0);
+struct Matrix
+{
+    float4x4 wvp;
+};
+
+StructuredBuffer<Matrix> worldViewProjs : register(t0);
+Texture2D textures[] : register(t1);
 SamplerState pointSampler : register(s0);
 
 VertexOut VS(VertexIn vertexIn)
 {
     VertexOut vertexOut;
-    vertexOut.position = mul(float4(vertexIn.position, 1.0f), worldViewProjs[index]);
+    vertexOut.position = mul(float4(vertexIn.position, 1.0f), worldViewProjs[index].wvp);
     vertexOut.uv = vertexIn.uv;
     return vertexOut;
 }

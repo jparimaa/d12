@@ -21,7 +21,8 @@ constexpr uint32_t roundUpByteSize(uint32_t byteSize)
 Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::wstring& filename,
                                                const D3D_SHADER_MACRO* defines,
                                                const std::string& entrypoint,
-                                               const std::string& target);
+                                               const std::string& target,
+                                               UINT flags = 0);
 
 std::wstring stringToWstring(const std::string& str);
 

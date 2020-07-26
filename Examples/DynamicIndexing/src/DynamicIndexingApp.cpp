@@ -205,11 +205,15 @@ void DynamicIndexingApp::createConstantBuffer()
                                                  nullptr,
                                                  IID_PPV_ARGS(&constantBuffer)));
 
-        D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
-        cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
-        cbvDesc.SizeInBytes = constantBufferSize;
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Buffer.FirstElement = 0;
+        srvDesc.Buffer.NumElements = m_objectCount;
+        srvDesc.Buffer.StructureByteStride = sizeof(DirectX::XMFLOAT4X4);
 
-        d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+        d3dDevice->CreateShaderResourceView(constantBuffer.Get(), &srvDesc, handle);
         handle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
     }
 }
@@ -300,15 +304,15 @@ void DynamicIndexingApp::createShaders()
 {
     std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
     shaderFile += L"simple.hlsl";
-    m_vertexShader = fw::compileShader(shaderFile, nullptr, "VS", "vs_5_1");
-    m_pixelShader = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_1");
+    m_vertexShader = fw::compileShader(shaderFile, nullptr, "VS", "vs_5_1", D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES);
+    m_pixelShader = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_1", D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES);
 }
 
 void DynamicIndexingApp::createRootSignature()
 {
     CD3DX12_DESCRIPTOR_RANGE ranges[2];
-    ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, m_objectCount, 1);
-    ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_objectCount, 0);
+    ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_objectCount, 0);
+    ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, m_objectCount, 1);
 
     CD3DX12_ROOT_PARAMETER rootParameters[c_rootParameterCount];
     rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_VERTEX);
