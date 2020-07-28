@@ -116,7 +116,7 @@ bool DXRApp::initialize()
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> commandList = fw::API::getCommandList();
     std::vector<VertexUploadBuffers> vertexUploadBuffers;
     createVertexBuffers(model, commandList, vertexUploadBuffers);
-    createBLAS(commandList);
+    createBLASs(commandList);
     createTLAS(commandList);
     createShaders();
     createRayGenRootSignature();
@@ -289,27 +289,32 @@ void DXRApp::createVertexBuffers(const fw::Model& model,
     }
 }
 
-void DXRApp::createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList)
+void DXRApp::createBLASs(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList)
+{
+    for (const RenderObject& ro : m_renderObjects)
+    {
+        m_blasBuffers.push_back(createBLAS(commandList, ro));
+    }
+}
+
+Microsoft::WRL::ComPtr<ID3D12Resource> DXRApp::createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, const RenderObject& ro)
 {
     // Add geometries
     std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geometryDescs;
 
-    for (const RenderObject& ro : m_renderObjects)
-    {
-        D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc{};
-        geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-        geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
-        geometryDesc.Triangles.VertexBuffer.StartAddress = ro.vertexBufferView.BufferLocation;
-        geometryDesc.Triangles.VertexBuffer.StrideInBytes = ro.vertexBufferView.StrideInBytes;
-        geometryDesc.Triangles.VertexCount = ro.vertexCount;
-        geometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-        geometryDesc.Triangles.IndexBuffer = ro.indexBufferView.BufferLocation;
-        geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
-        geometryDesc.Triangles.IndexCount = ro.indexCount;
-        geometryDesc.Triangles.Transform3x4 = 0;
+    D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc{};
+    geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+    geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+    geometryDesc.Triangles.VertexBuffer.StartAddress = ro.vertexBufferView.BufferLocation;
+    geometryDesc.Triangles.VertexBuffer.StrideInBytes = ro.vertexBufferView.StrideInBytes;
+    geometryDesc.Triangles.VertexCount = ro.vertexCount;
+    geometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+    geometryDesc.Triangles.IndexBuffer = ro.indexBufferView.BufferLocation;
+    geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
+    geometryDesc.Triangles.IndexCount = ro.indexCount;
+    geometryDesc.Triangles.Transform3x4 = 0;
 
-        geometryDescs.push_back(geometryDesc);
-    }
+    geometryDescs.push_back(geometryDesc);
 
     // Get buffer sizes
     const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
@@ -351,12 +356,13 @@ void DXRApp::createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
                                           IID_PPV_ARGS(&scratchBuffer)));
 
     bufferDesc.Width = resultSizeInBytes;
+    Microsoft::WRL::ComPtr<ID3D12Resource> blasBuffer;
     CHECK(device->CreateCommittedResource(&c_defaultHeapProps,
                                           D3D12_HEAP_FLAG_NONE,
                                           &bufferDesc,
                                           D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
                                           nullptr,
-                                          IID_PPV_ARGS(&m_blasBuffer)));
+                                          IID_PPV_ARGS(&blasBuffer)));
 
     // Build BLAS
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC buildDesc{};
@@ -364,7 +370,7 @@ void DXRApp::createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
     buildDesc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
     buildDesc.Inputs.NumDescs = static_cast<UINT>(geometryDescs.size());
     buildDesc.Inputs.pGeometryDescs = geometryDescs.data();
-    buildDesc.DestAccelerationStructureData = {m_blasBuffer->GetGPUVirtualAddress()};
+    buildDesc.DestAccelerationStructureData = {blasBuffer->GetGPUVirtualAddress()};
     buildDesc.ScratchAccelerationStructureData = {scratchBuffer->GetGPUVirtualAddress()};
     buildDesc.SourceAccelerationStructureData = 0;
     buildDesc.Inputs.Flags = flags;
@@ -374,9 +380,11 @@ void DXRApp::createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
     // Wait for the build to complete
     D3D12_RESOURCE_BARRIER uavBarrier{};
     uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-    uavBarrier.UAV.pResource = m_blasBuffer.Get();
+    uavBarrier.UAV.pResource = blasBuffer.Get();
     uavBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
     commandList->ResourceBarrier(1, &uavBarrier);
+
+    return blasBuffer;
 }
 
 void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList)
@@ -384,7 +392,7 @@ void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
     const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
 
     // Get buffer sizes
-    const UINT instanceCount = 1;
+    const UINT instanceCount = static_cast<UINT>(m_blasBuffers.size());
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS accelerationStructureInputs{};
     accelerationStructureInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
     accelerationStructureInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
@@ -447,8 +455,8 @@ void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
     assert(instanceDescs);
     ZeroMemory(instanceDescs, instanceDescsSizeInBytes);
 
-    { // Only one instance, if there were multiple instances they should be added here
-        const int i = 0;
+    for (size_t i = 0; i < m_blasBuffers.size(); ++i)
+    {
         instanceDescs[i].InstanceID = 0;
         instanceDescs[i].InstanceContributionToHitGroupIndex = 0;
         instanceDescs[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
@@ -460,7 +468,7 @@ void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
         */
         DirectX::XMMATRIX m = DirectX::XMMatrixIdentity();
         memcpy(instanceDescs[i].Transform, &m, sizeof(instanceDescs[i].Transform));
-        instanceDescs[i].AccelerationStructure = m_blasBuffer->GetGPUVirtualAddress();
+        instanceDescs[i].AccelerationStructure = m_blasBuffers[i]->GetGPUVirtualAddress();
         instanceDescs[i].InstanceMask = 0xFF;
     }
 
@@ -498,16 +506,16 @@ void DXRApp::createRayGenRootSignature()
     D3D12_DESCRIPTOR_RANGE outputDesc{};
     outputDesc.BaseShaderRegister = 0; // u0
     outputDesc.NumDescriptors = 1;
-    outputDesc.RegisterSpace = 0; // implicit register space 0
+    outputDesc.RegisterSpace = 0;
     outputDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV; // RWTexture2D<float4>
     outputDesc.OffsetInDescriptorsFromTableStart = 0;
 
     D3D12_DESCRIPTOR_RANGE tlasDesc{};
     tlasDesc.BaseShaderRegister = 0; // t0
     tlasDesc.NumDescriptors = 1;
-    tlasDesc.RegisterSpace = 0; // implicit register space 0
+    tlasDesc.RegisterSpace = 0;
     tlasDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // RaytracingAccelerationStructure
-    tlasDesc.OffsetInDescriptorsFromTableStart = 1;
+    tlasDesc.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
     std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc, tlasDesc};
 
@@ -537,17 +545,27 @@ void DXRApp::createMissRootSignature()
 
 void DXRApp::createHitRootSignature()
 {
-    std::vector<D3D12_ROOT_PARAMETER> parameters;
+    D3D12_DESCRIPTOR_RANGE indexBuffer{};
+    indexBuffer.BaseShaderRegister = 0;
+    indexBuffer.NumDescriptors = 1;
+    indexBuffer.RegisterSpace = 0;
+    indexBuffer.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    indexBuffer.OffsetInDescriptorsFromTableStart = 0;
+
+    D3D12_DESCRIPTOR_RANGE vertexBuffer{};
+    vertexBuffer.BaseShaderRegister = 1;
+    vertexBuffer.NumDescriptors = 1;
+    vertexBuffer.RegisterSpace = 0;
+    vertexBuffer.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    vertexBuffer.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{indexBuffer, vertexBuffer};
 
     D3D12_ROOT_PARAMETER rootParameter{};
-    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
-    rootParameter.Descriptor.RegisterSpace = 0;
-    rootParameter.Descriptor.ShaderRegister = 0;
-    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    parameters.push_back(rootParameter);
-
-    rootParameter.Descriptor.ShaderRegister = 1;
-    parameters.push_back(rootParameter);
+    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+    rootParameter.DescriptorTable.NumDescriptorRanges = static_cast<UINT>(rangesPerRootParameter.size());
+    rootParameter.DescriptorTable.pDescriptorRanges = rangesPerRootParameter.data();
+    std::vector<D3D12_ROOT_PARAMETER> parameters{rootParameter};
 
     D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
     rootSignatureDesc.NumParameters = static_cast<UINT>(parameters.size());
@@ -748,8 +766,10 @@ void DXRApp::createCameraBuffer()
 
 void DXRApp::createDescriptorHeap()
 {
+    const UINT incSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
+
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
-    heapDesc.NumDescriptors = 2;
+    heapDesc.NumDescriptors = 2 + static_cast<UINT>(m_renderObjects.size()) * 2;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -762,35 +782,55 @@ void DXRApp::createDescriptorHeap()
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
     uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
     device->CreateUnorderedAccessView(m_outputBuffer.Get(), nullptr, &uavDesc, srvHandle);
+    srvHandle.ptr += incSize;
 
     // Add TLAS SRV after the output buffer
-    srvHandle.ptr += device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    D3D12_SHADER_RESOURCE_VIEW_DESC asDesc{};
+    asDesc.Format = DXGI_FORMAT_UNKNOWN;
+    asDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+    asDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    asDesc.RaytracingAccelerationStructure.Location = m_tlasBuffer->GetGPUVirtualAddress();
+    device->CreateShaderResourceView(nullptr, &asDesc, srvHandle);
+    srvHandle.ptr += incSize;
 
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-    srvDesc.Format = DXGI_FORMAT_UNKNOWN;
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.RaytracingAccelerationStructure.Location = m_tlasBuffer->GetGPUVirtualAddress();
-    device->CreateShaderResourceView(nullptr, &srvDesc, srvHandle);
+    // Buffer SRVs
+    for (const RenderObject& ro : m_renderObjects)
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Buffer.FirstElement = 0;
+        srvDesc.Buffer.NumElements = ro.indexCount;
+        srvDesc.Buffer.StructureByteStride = sizeof(uint16_t);
+        device->CreateShaderResourceView(ro.indexBuffer.Get(), &srvDesc, srvHandle);
+        srvHandle.ptr += incSize;
+
+        srvDesc.Buffer.NumElements = ro.vertexCount;
+        UINT t = srvDesc.Buffer.StructureByteStride = sizeof(fw::Mesh::Vertex);
+        device->CreateShaderResourceView(ro.vertexBuffer.Get(), &srvDesc, srvHandle);
+        srvHandle.ptr += incSize;
+    }
 }
 
 void DXRApp::createShaderBindingTable()
 {
     uint32_t entrySize = 0;
-    const uint32_t byteAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
+    const uint32_t identifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+    const uint32_t alignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
 
-    entrySize = byteAlignment + 8 * 1; // 1x heap pointer
-    m_rayGenEntrySize = ROUND_UP(entrySize, byteAlignment);
+    entrySize = identifierSize + 8; // heap pointer
+    m_rayGenEntrySize = ROUND_UP(entrySize, alignment);
     const UINT numRayGenEntries = 1;
 
-    entrySize = byteAlignment + 8 * 0;
-    m_missEntrySize = ROUND_UP(entrySize, byteAlignment);
+    entrySize = identifierSize;
+    m_missEntrySize = ROUND_UP(entrySize, alignment);
     m_missEntrySize = max(m_missEntrySize, 64);
     const UINT numMissEntries = 1;
 
-    entrySize = byteAlignment + 8 * static_cast<uint32_t>(m_renderObjects.size()); // vertex buffers
-    m_hitEntrySize = ROUND_UP(entrySize, byteAlignment);
-    const UINT numHitEntries = 1;
+    entrySize = identifierSize + 8; // heap pointer
+    m_hitEntrySize = ROUND_UP(entrySize, alignment);
+    const UINT numHitEntries = static_cast<UINT>(m_renderObjects.size());
 
     m_rayGenSectionSize = m_rayGenEntrySize * numRayGenEntries;
     m_missSectionSize = m_missEntrySize * numMissEntries;
@@ -821,42 +861,49 @@ void DXRApp::createShaderBindingTable()
                                           nullptr,
                                           IID_PPV_ARGS(&m_sbtBuffer)));
 
-    struct SBTEntry
-    {
-        std::wstring entryPoint;
-        std::vector<void*> inputData;
-    };
-
-    auto copyShaderData = [](ID3D12StateObjectProperties* properties, uint8_t*& outputData, const SBTEntry& sbtEntry, uint32_t entrySize) {
-        void* id = properties->GetShaderIdentifier(sbtEntry.entryPoint.c_str());
-        CHECK(id && "Unknown shader identifier");
-        const uint32_t byteAlignment = D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT;
-        memcpy(outputData, id, byteAlignment);
-        memcpy(outputData + byteAlignment, sbtEntry.inputData.data(), sbtEntry.inputData.size() * 8);
-        outputData += entrySize;
-    };
-
     Microsoft::WRL::ComPtr<ID3D12StateObjectProperties> stateObjectProperties;
     CHECK(m_stateObject->QueryInterface(IID_PPV_ARGS(&stateObjectProperties)));
 
     uint8_t* mappedData;
     CHECK(m_sbtBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
 
-    D3D12_GPU_DESCRIPTOR_HANDLE srvUavHeapHandle = m_srvUavHeap->GetGPUDescriptorHandleForHeapStart();
-    UINT64* heapPointer = reinterpret_cast<UINT64*>(srvUavHeapHandle.ptr);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_srvUavHeap->GetCPUDescriptorHandleForHeapStart());
+    UINT64* heapPointer = reinterpret_cast<UINT64*>(handle.ptr);
+
+    struct SBTEntry
+    {
+        std::wstring entryPoint;
+        std::vector<void*> inputData;
+    };
 
     SBTEntry rayGen{L"RayGen", {heapPointer}};
     SBTEntry miss{L"Miss", {}};
-    SBTEntry hitGroup{L"HitGroup", {}};
+    std::vector<SBTEntry> hitGroups;
+
+    const UINT incSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
+    handle.Offset(2, incSize);
 
     for (const RenderObject& ro : m_renderObjects)
     {
-        hitGroup.inputData.push_back((void*)(ro.vertexBuffer->GetGPUVirtualAddress()));
+        hitGroups.push_back({L"HitGroup", {reinterpret_cast<UINT64*>(handle.ptr)}});
+        handle.Offset(2, incSize);
     }
+
+    auto copyShaderData = [](ID3D12StateObjectProperties* properties, uint8_t*& outputData, const SBTEntry& sbtEntry, uint32_t entrySize) {
+        void* id = properties->GetShaderIdentifier(sbtEntry.entryPoint.c_str());
+        CHECK(id && "Unknown shader identifier");
+        const uint32_t identifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+        memcpy(outputData, id, identifierSize);
+        memcpy(outputData + identifierSize, sbtEntry.inputData.data(), sbtEntry.inputData.size() * 8);
+        outputData += entrySize;
+    };
 
     copyShaderData(stateObjectProperties.Get(), mappedData, rayGen, m_rayGenEntrySize);
     copyShaderData(stateObjectProperties.Get(), mappedData, miss, m_missEntrySize);
-    copyShaderData(stateObjectProperties.Get(), mappedData, hitGroup, m_hitEntrySize);
+    for (const SBTEntry& e : hitGroups)
+    {
+        copyShaderData(stateObjectProperties.Get(), mappedData, e, m_hitEntrySize);
+    }
 
     m_sbtBuffer->Unmap(0, nullptr);
 }

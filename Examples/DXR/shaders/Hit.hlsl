@@ -1,5 +1,10 @@
 #include "Common.hlsl"
 
+struct Index
+{
+    int index;
+};
+
 struct Vertex
 {
     float3 position;
@@ -8,15 +13,16 @@ struct Vertex
     float2 uv;
 };
 
-StructuredBuffer<Vertex> vertexBuffer0 : register(t0);
-StructuredBuffer<Vertex> vertexBuffer1 : register(t1);
+StructuredBuffer<Index> indexBuffer : register(t0);
+StructuredBuffer<Vertex> vertexBuffer : register(t1);
 
 [shader("closesthit")] void ClosestHit(inout HitInfo payload,
                                        Attributes attrib) {
-    uint vertId = 3 * PrimitiveIndex();
+    uint primitiveId = 3 * PrimitiveIndex();
+    float2 n = vertexBuffer[indexBuffer[primitiveId].index].uv;
     float3 hitColor;
-    hitColor.x = attrib.bary.x;
-    hitColor.y = attrib.bary.y;
-    hitColor.z = vertexBuffer0[vertId + 2].position.y;
+    hitColor.x = n.x;
+    hitColor.y = n.y;
+    hitColor.z = 0.3;
     payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }

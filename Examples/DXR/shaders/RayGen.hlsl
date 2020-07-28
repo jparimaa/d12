@@ -1,9 +1,9 @@
 #include "Common.hlsl"
 
-RWTexture2D<float4> gOutput : register(u0);
+RWTexture2D<float4> output : register(u0);
+RaytracingAccelerationStructure tlas : register(t0);
 
-RaytracingAccelerationStructure SceneBVH : register(t0);
-
+// Global
 cbuffer CameraParams : register(b0)
 {
     float4x4 inverseView;
@@ -25,13 +25,13 @@ cbuffer CameraParams : register(b0)
     ray.TMax = 100000;
 
     TraceRay(
-        SceneBVH,
-        RAY_FLAG_NONE,
+        tlas,
+        RAY_FLAG_CULL_FRONT_FACING_TRIANGLES,
         0xFF,
         0,
         0,
         0,
         ray,
         payload);
-    gOutput[launchIndex] = float4(payload.colorAndDistance.rgb, 1.f);
+    output[launchIndex] = float4(payload.colorAndDistance.rgb, 1.f);
 }

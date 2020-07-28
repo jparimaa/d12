@@ -41,7 +41,7 @@ private:
     };
 
     std::vector<RenderObject> m_renderObjects;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_blasBuffer;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_blasBuffers;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_tlasBuffer;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_tlasInstanceDescsBuffer;
 
@@ -76,7 +76,8 @@ private:
 
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
-    void createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
+    void createBLASs(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
+    Microsoft::WRL::ComPtr<ID3D12Resource> createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, const RenderObject& ro);
     void createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
     void createShaders();
     void createRayGenRootSignature();
