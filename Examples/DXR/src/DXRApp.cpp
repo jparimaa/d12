@@ -116,6 +116,7 @@ bool DXRApp::initialize()
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> commandList = fw::API::getCommandList();
     std::vector<VertexUploadBuffers> vertexUploadBuffers;
     createVertexBuffers(model, commandList, vertexUploadBuffers);
+    createConstantBuffers();
     createBLASs(commandList);
     createTLAS(commandList);
     createShaders();
@@ -289,6 +290,54 @@ void DXRApp::createVertexBuffers(const fw::Model& model,
     }
 }
 
+void DXRApp::createConstantBuffers()
+{
+    const int numBuffers = 2;
+    m_constBuffers.resize(numBuffers);
+
+    DirectX::XMFLOAT4 bufferData[] = {
+        // Instance 0
+        DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f),
+        DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f),
+        DirectX::XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f),
+        // Instance 1
+        DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f),
+        DirectX::XMFLOAT4(0.0f, 1.0f, 1.0f, 1.0f),
+        DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f),
+    };
+
+    const uint32_t bufferSize = sizeof(DirectX::XMFLOAT4) * 3;
+    Microsoft::WRL::ComPtr<ID3D12Device5> d3dDevice = fw::API::getD3dDevice();
+
+    for (int i = 0; i < numBuffers; i++)
+    {
+        D3D12_RESOURCE_DESC bufDesc{};
+        bufDesc.Alignment = 0;
+        bufDesc.DepthOrArraySize = 1;
+        bufDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        bufDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+        bufDesc.Format = DXGI_FORMAT_UNKNOWN;
+        bufDesc.Height = 1;
+        bufDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        bufDesc.MipLevels = 1;
+        bufDesc.SampleDesc.Count = 1;
+        bufDesc.SampleDesc.Quality = 0;
+        bufDesc.Width = bufferSize;
+
+        CHECK(d3dDevice->CreateCommittedResource(&c_uploadHeapProps,
+                                                 D3D12_HEAP_FLAG_NONE,
+                                                 &bufDesc,
+                                                 D3D12_RESOURCE_STATE_GENERIC_READ,
+                                                 nullptr,
+                                                 IID_PPV_ARGS(&m_constBuffers[i])));
+
+        uint8_t* data;
+        CHECK(m_constBuffers[i]->Map(0, nullptr, (void**)&data));
+        memcpy(data, &bufferData[i * 3], bufferSize);
+        m_constBuffers[i]->Unmap(0, nullptr);
+    }
+}
+
 void DXRApp::createBLASs(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList)
 {
     for (const RenderObject& ro : m_renderObjects)
@@ -370,8 +419,8 @@ Microsoft::WRL::ComPtr<ID3D12Resource> DXRApp::createBLAS(Microsoft::WRL::ComPtr
     buildDesc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
     buildDesc.Inputs.NumDescs = static_cast<UINT>(geometryDescs.size());
     buildDesc.Inputs.pGeometryDescs = geometryDescs.data();
-    buildDesc.DestAccelerationStructureData = {blasBuffer->GetGPUVirtualAddress()};
-    buildDesc.ScratchAccelerationStructureData = {scratchBuffer->GetGPUVirtualAddress()};
+    buildDesc.DestAccelerationStructureData = blasBuffer->GetGPUVirtualAddress();
+    buildDesc.ScratchAccelerationStructureData = scratchBuffer->GetGPUVirtualAddress();
     buildDesc.SourceAccelerationStructureData = 0;
     buildDesc.Inputs.Flags = flags;
 
@@ -457,8 +506,8 @@ void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
 
     for (size_t i = 0; i < m_blasBuffers.size(); ++i)
     {
-        instanceDescs[i].InstanceID = 0;
-        instanceDescs[i].InstanceContributionToHitGroupIndex = 0;
+        instanceDescs[i].InstanceID = i;
+        instanceDescs[i].InstanceContributionToHitGroupIndex = i;
         instanceDescs[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
 
         /*
@@ -479,8 +528,8 @@ void DXRApp::createTLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& comm
     buildDesc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
     buildDesc.Inputs.InstanceDescs = m_tlasInstanceDescsBuffer->GetGPUVirtualAddress();
     buildDesc.Inputs.NumDescs = instanceCount;
-    buildDesc.DestAccelerationStructureData = {m_tlasBuffer->GetGPUVirtualAddress()};
-    buildDesc.ScratchAccelerationStructureData = {scratchBuffer->GetGPUVirtualAddress()};
+    buildDesc.DestAccelerationStructureData = m_tlasBuffer->GetGPUVirtualAddress();
+    buildDesc.ScratchAccelerationStructureData = scratchBuffer->GetGPUVirtualAddress();
     buildDesc.SourceAccelerationStructureData = 0;
     buildDesc.Inputs.Flags = flags;
 
@@ -559,7 +608,14 @@ void DXRApp::createHitRootSignature()
     vertexBuffer.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     vertexBuffer.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
-    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{indexBuffer, vertexBuffer};
+    D3D12_DESCRIPTOR_RANGE constantBuffer{};
+    constantBuffer.BaseShaderRegister = 2;
+    constantBuffer.NumDescriptors = 1;
+    constantBuffer.RegisterSpace = 0;
+    constantBuffer.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+    constantBuffer.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
+
+    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{indexBuffer, vertexBuffer, constantBuffer};
 
     D3D12_ROOT_PARAMETER rootParameter{};
     rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -769,7 +825,7 @@ void DXRApp::createDescriptorHeap()
     const UINT incSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
 
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
-    heapDesc.NumDescriptors = 2 + static_cast<UINT>(m_renderObjects.size()) * 2;
+    heapDesc.NumDescriptors = 2 + static_cast<UINT>(m_renderObjects.size()) * 3;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -794,8 +850,9 @@ void DXRApp::createDescriptorHeap()
     srvHandle.ptr += incSize;
 
     // Buffer SRVs
-    for (const RenderObject& ro : m_renderObjects)
+    for (size_t i = 0; i < m_renderObjects.size(); ++i)
     {
+        const RenderObject& ro = m_renderObjects[i];
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
@@ -809,6 +866,16 @@ void DXRApp::createDescriptorHeap()
         srvDesc.Buffer.NumElements = ro.vertexCount;
         UINT t = srvDesc.Buffer.StructureByteStride = sizeof(fw::Mesh::Vertex);
         device->CreateShaderResourceView(ro.vertexBuffer.Get(), &srvDesc, srvHandle);
+        srvHandle.ptr += incSize;
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC cbvDesc{};
+        cbvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        cbvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        cbvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        cbvDesc.Buffer.FirstElement = 0;
+        cbvDesc.Buffer.NumElements = 3;
+        cbvDesc.Buffer.StructureByteStride = sizeof(DirectX::XMFLOAT4);
+        device->CreateShaderResourceView(m_constBuffers[i].Get(), &cbvDesc, srvHandle);
         srvHandle.ptr += incSize;
     }
 }
@@ -886,7 +953,7 @@ void DXRApp::createShaderBindingTable()
     for (const RenderObject& ro : m_renderObjects)
     {
         hitGroups.push_back({L"HitGroup", {reinterpret_cast<UINT64*>(handle.ptr)}});
-        handle.Offset(2, incSize);
+        handle.Offset(3, incSize);
     }
 
     auto copyShaderData = [](ID3D12StateObjectProperties* properties, uint8_t*& outputData, const SBTEntry& sbtEntry, uint32_t entrySize) {

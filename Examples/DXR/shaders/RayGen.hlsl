@@ -26,7 +26,7 @@ cbuffer CameraParams : register(b0)
 
     TraceRay(
         tlas,
-        RAY_FLAG_CULL_FRONT_FACING_TRIANGLES,
+        RAY_FLAG_CULL_BACK_FACING_TRIANGLES,
         0xFF,
         0,
         0,

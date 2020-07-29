@@ -1,7 +1,9 @@
-struct HitInfo {
-  float4 colorAndDistance;
+struct HitInfo
+{
+    float4 colorAndDistance;
 };
 
-struct Attributes {
-  float2 bary;
+struct Attributes
+{
+    float2 barycentrics;
 };
