@@ -148,7 +148,7 @@ bool DXRApp::initialize()
     fw::API::completeInitialization();
 
     m_cameraController.setCamera(&m_camera);
-    m_camera.getTransformation().setPosition(0.0f, 0.0f, -50.0f);
+    m_camera.getTransformation().setPosition(10.0f, 20.0f, -40.0f);
 
     return status;
 }
