@@ -272,21 +272,27 @@ void DXRApp::createVertexBuffers(const fw::Model& model,
         const fw::Mesh& mesh = meshes[i];
         std::vector<fw::Mesh::Vertex> vertices = mesh.getVertices();
         const size_t vertexBufferSize = vertices.size() * sizeof(fw::Mesh::Vertex);
-        const size_t indexBufferSize = mesh.indices.size() * sizeof(uint16_t);
+
+        std::vector<uint32_t> indices32(mesh.indices.size());
+        for (size_t j = 0; j < mesh.indices.size(); ++j)
+        {
+            indices32[j] = static_cast<uint32_t>(mesh.indices[j]);
+        }
+        const size_t indexBufferSize = indices32.size() * sizeof(indices32[0]);
 
         ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, vertexUploadBuffers[i].vertexUploadBuffer);
-        ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), mesh.indices.data(), indexBufferSize, vertexUploadBuffers[i].indexUploadBuffer);
+        ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), indices32.data(), indexBufferSize, vertexUploadBuffers[i].indexUploadBuffer);
 
         ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
         ro.vertexBufferView.StrideInBytes = sizeof(fw::Mesh::Vertex);
         ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
 
         ro.indexBufferView.BufferLocation = ro.indexBuffer->GetGPUVirtualAddress();
-        ro.indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+        ro.indexBufferView.Format = DXGI_FORMAT_R32_UINT;
         ro.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
 
         ro.vertexCount = static_cast<UINT>(vertices.size());
-        ro.indexCount = static_cast<UINT>(mesh.indices.size());
+        ro.indexCount = static_cast<UINT>(indices32.size());
     }
 }
 
@@ -359,7 +365,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> DXRApp::createBLAS(Microsoft::WRL::ComPtr
     geometryDesc.Triangles.VertexCount = ro.vertexCount;
     geometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
     geometryDesc.Triangles.IndexBuffer = ro.indexBufferView.BufferLocation;
-    geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
+    geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R32_UINT;
     geometryDesc.Triangles.IndexCount = ro.indexCount;
     geometryDesc.Triangles.Transform3x4 = 0;
 
@@ -859,7 +865,7 @@ void DXRApp::createDescriptorHeap()
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
         srvDesc.Buffer.FirstElement = 0;
         srvDesc.Buffer.NumElements = ro.indexCount;
-        srvDesc.Buffer.StructureByteStride = sizeof(uint16_t);
+        srvDesc.Buffer.StructureByteStride = sizeof(uint32_t);
         device->CreateShaderResourceView(ro.indexBuffer.Get(), &srvDesc, srvHandle);
         srvHandle.ptr += incSize;
 

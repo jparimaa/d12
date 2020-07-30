@@ -13,6 +13,7 @@ struct Vertex
     float2 uv;
 };
 
+// For debugging purposes
 struct PerFrame
 {
     float4 A;
@@ -20,6 +21,7 @@ struct PerFrame
     float4 C;
 };
 
+// Could use ByteAddressBuffer & 16bit indices for smaller index buffer
 StructuredBuffer<Index> indexBuffer : register(t0);
 StructuredBuffer<Vertex> vertexBuffer : register(t1);
 StructuredBuffer<PerFrame> perFrame : register(t2);
@@ -27,6 +29,10 @@ StructuredBuffer<PerFrame> perFrame : register(t2);
 [shader("closesthit")] void ClosestHit(inout HitInfo payload,
                                        Attributes attributes) {
     float3 barycentrics = float3(1.0 - attributes.barycentrics.x - attributes.barycentrics.y, attributes.barycentrics.x, attributes.barycentrics.y);
-    float3 hitColor = perFrame[0].A * barycentrics.x + perFrame[0].B * barycentrics.y + perFrame[0].C * barycentrics.z;
+    int index = PrimitiveIndex() * 3;
+    float3 hitColor = //
+        vertexBuffer[indexBuffer[index + 0].index].normal * barycentrics.x + //
+        vertexBuffer[indexBuffer[index + 1].index].normal * barycentrics.y + //
+        vertexBuffer[indexBuffer[index + 2].index].normal * barycentrics.z;
     payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }
