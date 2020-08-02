@@ -1,14 +1,7 @@
 #include "Common.hlsl"
+#include "Global.hlsl"
 
 RWTexture2D<float4> output : register(u0);
-RaytracingAccelerationStructure tlas : register(t0);
-
-// Global
-cbuffer CameraParams : register(b0)
-{
-    float4x4 inverseView;
-    float4x4 inverseProjection;
-}
 
 [shader("raygeneration")] void RayGen() {
     HitInfo payload;

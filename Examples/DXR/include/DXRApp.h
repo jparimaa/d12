@@ -48,6 +48,7 @@ private:
     Microsoft::WRL::ComPtr<IDxcBlob> m_rayGenShader;
     Microsoft::WRL::ComPtr<IDxcBlob> m_missShader;
     Microsoft::WRL::ComPtr<IDxcBlob> m_hitShader;
+    Microsoft::WRL::ComPtr<IDxcBlob> m_reflectionHitShader;
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rayGenRootSignature;
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_missRootSignature;
@@ -78,6 +79,7 @@ private:
 
     void loadModel(fw::Model& model);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, std::vector<VertexUploadBuffers>& vertexUploadBuffers);
+    fw::Mesh getDebugTriangleMeshYPlane();
     void createConstantBuffers();
     void createBLASs(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList);
     Microsoft::WRL::ComPtr<ID3D12Resource> createBLAS(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4>& commandList, const RenderObject& ro);

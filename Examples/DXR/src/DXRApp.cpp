@@ -213,6 +213,7 @@ void DXRApp::fillCommandList()
     commandList->SetComputeRootSignature(m_globalRootSignature.Get());
     auto cbvAddress = m_cameraBuffer->GetGPUVirtualAddress() + frameIndex * c_alignedCameraBufferSize;
     commandList->SetComputeRootConstantBufferView(0, cbvAddress);
+    commandList->SetComputeRootShaderResourceView(1, m_tlasBuffer->GetGPUVirtualAddress());
 
     commandList->SetPipelineState1(m_stateObject.Get());
     commandList->DispatchRays(&dispatchRaysDesc);
@@ -261,6 +262,7 @@ void DXRApp::createVertexBuffers(const fw::Model& model,
 {
     Microsoft::WRL::ComPtr<ID3D12Device5> d3dDevice = fw::API::getD3dDevice();
     fw::Model::Meshes meshes = model.getMeshes();
+    meshes.push_back(getDebugTriangleMeshYPlane());
 
     const size_t numMeshes = meshes.size();
     vertexUploadBuffers.resize(numMeshes);
@@ -296,12 +298,37 @@ void DXRApp::createVertexBuffers(const fw::Model& model,
     }
 }
 
+fw::Mesh DXRApp::getDebugTriangleMeshYPlane()
+{
+    fw::Mesh mesh;
+    mesh.positions = {
+        {-1000.0f, 0.0, -1000.0f},
+        {0.0f, 0.0, 1000.0f},
+        {1000.0f, 0.0, -1000.0f}};
+
+    mesh.normals = {
+        {0.0f, 1.0, 0.0f},
+        {0.0f, 1.0, 0.0f},
+        {0.0f, 1.0, 0.0f}};
+
+    mesh.uvs = {
+        {0.0f, 0.0},
+        {0.0f, 0.0},
+        {0.0f, 0.0}};
+
+    mesh.tangents = {
+        {0.0f, 0.0, 0.0f},
+        {0.0f, 0.0, 0.0f},
+        {0.0f, 0.0, 0.0f}};
+
+    mesh.indices = {0, 1, 2};
+
+    return mesh;
+}
+
 void DXRApp::createConstantBuffers()
 {
-    const int numBuffers = 2;
-    m_constBuffers.resize(numBuffers);
-
-    DirectX::XMFLOAT4 bufferData[] = {
+    std::vector<DirectX::XMFLOAT4> bufferData{
         // Instance 0
         DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f),
         DirectX::XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f),
@@ -310,8 +337,15 @@ void DXRApp::createConstantBuffers()
         DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f),
         DirectX::XMFLOAT4(0.0f, 1.0f, 1.0f, 1.0f),
         DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f),
+        // Instance 2
+        DirectX::XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f),
+        DirectX::XMFLOAT4(0.0f, 1.0f, 1.0f, 1.0f),
+        DirectX::XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f),
     };
 
+    const size_t numBuffers = bufferData.size() / 3;
+    assert(numBuffers == m_renderObjects.size());
+    m_constBuffers.resize(numBuffers);
     const uint32_t bufferSize = sizeof(DirectX::XMFLOAT4) * 3;
     Microsoft::WRL::ComPtr<ID3D12Device5> d3dDevice = fw::API::getD3dDevice();
 
@@ -554,6 +588,7 @@ void DXRApp::createShaders()
     m_rayGenShader = compileDXRShader(L"RayGen.hlsl");
     m_missShader = compileDXRShader(L"Miss.hlsl");
     m_hitShader = compileDXRShader(L"Hit.hlsl");
+    m_reflectionHitShader = compileDXRShader(L"ReflectionHit.hlsl");
 }
 
 void DXRApp::createRayGenRootSignature()
@@ -565,14 +600,7 @@ void DXRApp::createRayGenRootSignature()
     outputDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV; // RWTexture2D<float4>
     outputDesc.OffsetInDescriptorsFromTableStart = 0;
 
-    D3D12_DESCRIPTOR_RANGE tlasDesc{};
-    tlasDesc.BaseShaderRegister = 0; // t0
-    tlasDesc.NumDescriptors = 1;
-    tlasDesc.RegisterSpace = 0;
-    tlasDesc.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // RaytracingAccelerationStructure
-    tlasDesc.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-
-    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc, tlasDesc};
+    std::vector<D3D12_DESCRIPTOR_RANGE> rangesPerRootParameter{outputDesc};
 
     D3D12_ROOT_PARAMETER rootParameter{};
     rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
@@ -601,21 +629,21 @@ void DXRApp::createMissRootSignature()
 void DXRApp::createHitRootSignature()
 {
     D3D12_DESCRIPTOR_RANGE indexBuffer{};
-    indexBuffer.BaseShaderRegister = 0;
+    indexBuffer.BaseShaderRegister = 1;
     indexBuffer.NumDescriptors = 1;
     indexBuffer.RegisterSpace = 0;
     indexBuffer.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     indexBuffer.OffsetInDescriptorsFromTableStart = 0;
 
     D3D12_DESCRIPTOR_RANGE vertexBuffer{};
-    vertexBuffer.BaseShaderRegister = 1;
+    vertexBuffer.BaseShaderRegister = 2;
     vertexBuffer.NumDescriptors = 1;
     vertexBuffer.RegisterSpace = 0;
     vertexBuffer.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
     vertexBuffer.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 
     D3D12_DESCRIPTOR_RANGE constantBuffer{};
-    constantBuffer.BaseShaderRegister = 2;
+    constantBuffer.BaseShaderRegister = 3;
     constantBuffer.NumDescriptors = 1;
     constantBuffer.RegisterSpace = 0;
     constantBuffer.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -639,12 +667,19 @@ void DXRApp::createHitRootSignature()
 
 void DXRApp::createGlobalRootSignature()
 {
-    D3D12_ROOT_PARAMETER rootParameter{};
-    rootParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
-    rootParameter.Descriptor.ShaderRegister = 0;
-    rootParameter.Descriptor.RegisterSpace = 0;
-    rootParameter.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    std::vector<D3D12_ROOT_PARAMETER> parameters{rootParameter};
+    D3D12_ROOT_PARAMETER cameraBuffer{};
+    cameraBuffer.ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    cameraBuffer.Descriptor.ShaderRegister = 0;
+    cameraBuffer.Descriptor.RegisterSpace = 0;
+    cameraBuffer.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    D3D12_ROOT_PARAMETER tlas{};
+    tlas.ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
+    tlas.Descriptor.ShaderRegister = 0;
+    tlas.Descriptor.RegisterSpace = 0;
+    tlas.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+    std::vector<D3D12_ROOT_PARAMETER> parameters{cameraBuffer, tlas};
 
     D3D12_ROOT_SIGNATURE_DESC rootSignatureDesc{};
     rootSignatureDesc.NumParameters = static_cast<UINT>(parameters.size());
@@ -765,7 +800,7 @@ void DXRApp::createStateObject()
 
     // Ray tracing pipeline configuration
     D3D12_RAYTRACING_PIPELINE_CONFIG pipelineConfig{};
-    pipelineConfig.MaxTraceRecursionDepth = 1;
+    pipelineConfig.MaxTraceRecursionDepth = 2;
 
     D3D12_STATE_SUBOBJECT pipelineConfigObject{};
     pipelineConfigObject.Type = D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG;
@@ -831,7 +866,7 @@ void DXRApp::createDescriptorHeap()
     const UINT incSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
 
     D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
-    heapDesc.NumDescriptors = 2 + static_cast<UINT>(m_renderObjects.size()) * 3;
+    heapDesc.NumDescriptors = 1 + static_cast<UINT>(m_renderObjects.size()) * 3;
     heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -844,15 +879,6 @@ void DXRApp::createDescriptorHeap()
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
     uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
     device->CreateUnorderedAccessView(m_outputBuffer.Get(), nullptr, &uavDesc, srvHandle);
-    srvHandle.ptr += incSize;
-
-    // Add TLAS SRV after the output buffer
-    D3D12_SHADER_RESOURCE_VIEW_DESC asDesc{};
-    asDesc.Format = DXGI_FORMAT_UNKNOWN;
-    asDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
-    asDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    asDesc.RaytracingAccelerationStructure.Location = m_tlasBuffer->GetGPUVirtualAddress();
-    device->CreateShaderResourceView(nullptr, &asDesc, srvHandle);
     srvHandle.ptr += incSize;
 
     // Buffer SRVs
@@ -954,7 +980,7 @@ void DXRApp::createShaderBindingTable()
     std::vector<SBTEntry> hitGroups;
 
     const UINT incSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
-    handle.Offset(2, incSize);
+    handle.Offset(1, incSize);
 
     for (const RenderObject& ro : m_renderObjects)
     {
