@@ -692,10 +692,10 @@ void DXRApp::createGlobalRootSignature()
 void DXRApp::createStateObject()
 {
     const UINT64 subobjectCount = //
-        3 + // Shaders: RayGen, Miss, ClosestHit
-        1 + // Hit group
+        4 + // Shaders: RayGen, Miss, ClosestHit, ReflectionHit
+        2 + // Hit group
         1 + // Shader configuration
-        2 * 3 + // Root signature declaration + association
+        2 * 4 + // Root signature declaration + association
         1 + // Global root signature
         1; // Final pipeline subobject
 
@@ -715,7 +715,12 @@ void DXRApp::createStateObject()
         D3D12_STATE_SUBOBJECT subobject{};
     };
 
-    std::vector<LibraryExport> exportData{{L"RayGen", m_rayGenShader}, {L"Miss", m_missShader}, {L"ClosestHit", m_hitShader}};
+    std::vector<LibraryExport> exportData{
+        {L"RayGen", m_rayGenShader}, //
+        {L"Miss", m_missShader}, //
+        {L"ClosestHit", m_hitShader}, //
+        {L"ReflectionHit", m_reflectionHitShader} //
+    };
 
     for (LibraryExport& e : exportData)
     {
@@ -734,18 +739,31 @@ void DXRApp::createStateObject()
         subobjects.push_back(e.subobject);
     }
 
-    // Hit group
-    D3D12_HIT_GROUP_DESC hitGroupDesc{};
-    hitGroupDesc.HitGroupExport = L"HitGroup";
-    hitGroupDesc.ClosestHitShaderImport = L"ClosestHit";
-    hitGroupDesc.AnyHitShaderImport = nullptr;
-    hitGroupDesc.IntersectionShaderImport = nullptr;
+    // Hit group 1
+    D3D12_HIT_GROUP_DESC hitGroupDesc1{};
+    hitGroupDesc1.HitGroupExport = L"HitGroup";
+    hitGroupDesc1.ClosestHitShaderImport = L"ClosestHit";
+    hitGroupDesc1.AnyHitShaderImport = nullptr;
+    hitGroupDesc1.IntersectionShaderImport = nullptr;
 
-    D3D12_STATE_SUBOBJECT hitGroupSubobject{};
-    hitGroupSubobject.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
-    hitGroupSubobject.pDesc = &hitGroupDesc;
+    D3D12_STATE_SUBOBJECT hitGroupSubobject1{};
+    hitGroupSubobject1.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
+    hitGroupSubobject1.pDesc = &hitGroupDesc1;
 
-    subobjects.push_back(hitGroupSubobject);
+    subobjects.push_back(hitGroupSubobject1);
+
+    // Hit group 2
+    D3D12_HIT_GROUP_DESC hitGroupDesc2{};
+    hitGroupDesc2.HitGroupExport = L"HitGroupReflection";
+    hitGroupDesc2.ClosestHitShaderImport = L"ReflectionHit";
+    hitGroupDesc2.AnyHitShaderImport = nullptr;
+    hitGroupDesc2.IntersectionShaderImport = nullptr;
+
+    D3D12_STATE_SUBOBJECT hitGroupSubobject2{};
+    hitGroupSubobject2.Type = D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP;
+    hitGroupSubobject2.pDesc = &hitGroupDesc2;
+
+    subobjects.push_back(hitGroupSubobject2);
 
     // Shader configuration
     D3D12_RAYTRACING_SHADER_CONFIG shaderConfig{};
@@ -767,9 +785,11 @@ void DXRApp::createStateObject()
     };
 
     std::vector<RootSignatureAssociation> rootSigAssociations{
-        {m_rayGenRootSignature.Get(), L"RayGen"},
-        {m_missRootSignature.Get(), L"Miss"},
-        {m_hitRootSignature.Get(), L"HitGroup"}};
+        {m_rayGenRootSignature.Get(), L"RayGen"}, //
+        {m_missRootSignature.Get(), L"Miss"}, //
+        {m_hitRootSignature.Get(), L"HitGroup"}, //
+        {m_hitRootSignature.Get(), L"HitGroupReflection"} //
+    };
 
     for (RootSignatureAssociation& rsa : rootSigAssociations)
     {
@@ -977,16 +997,19 @@ void DXRApp::createShaderBindingTable()
 
     SBTEntry rayGen{L"RayGen", {heapPointer}};
     SBTEntry miss{L"Miss", {}};
-    std::vector<SBTEntry> hitGroups;
+    std::vector<SBTEntry> hitGroups1;
+    SBTEntry reflection{L"HitGroupReflection", {}};
 
     const UINT incSize = fw::API::getCbvSrvUavDescriptorIncrementSize();
     handle.Offset(1, incSize);
 
-    for (const RenderObject& ro : m_renderObjects)
+    for (size_t i = 0; i < m_renderObjects.size() - 1; ++i)
     {
-        hitGroups.push_back({L"HitGroup", {reinterpret_cast<UINT64*>(handle.ptr)}});
+        hitGroups1.push_back({L"HitGroup", {reinterpret_cast<UINT64*>(handle.ptr)}});
         handle.Offset(3, incSize);
     }
+
+    reflection.inputData = {reinterpret_cast<UINT64*>(handle.ptr)};
 
     auto copyShaderData = [](ID3D12StateObjectProperties* properties, uint8_t*& outputData, const SBTEntry& sbtEntry, uint32_t entrySize) {
         void* id = properties->GetShaderIdentifier(sbtEntry.entryPoint.c_str());
@@ -999,10 +1022,11 @@ void DXRApp::createShaderBindingTable()
 
     copyShaderData(stateObjectProperties.Get(), mappedData, rayGen, m_rayGenEntrySize);
     copyShaderData(stateObjectProperties.Get(), mappedData, miss, m_missEntrySize);
-    for (const SBTEntry& e : hitGroups)
+    for (const SBTEntry& e : hitGroups1)
     {
         copyShaderData(stateObjectProperties.Get(), mappedData, e, m_hitEntrySize);
     }
+    copyShaderData(stateObjectProperties.Get(), mappedData, reflection, m_hitEntrySize);
 
     m_sbtBuffer->Unmap(0, nullptr);
 }

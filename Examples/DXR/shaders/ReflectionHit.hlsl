@@ -63,6 +63,6 @@ StructuredBuffer<PerFrame> perFrame : register(t3);
     const float3 lightFactor = NDotL;
 
     const float3 debugColor = perFrame[0].A * barycentrics.x + perFrame[0].B * barycentrics.y + perFrame[0].C * barycentrics.z;
-    const float3 hitColor = lerp(reflectionPayload.colorAndDistance, lerp(lightFactor, debugColor, 0.3), 0.3);
+    const float3 hitColor = lerp(reflectionPayload.colorAndDistance, lerp(lightFactor, debugColor, 0.7), 0.7);
     payload.colorAndDistance = float4(hitColor, RayTCurrent());
 }
