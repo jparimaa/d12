@@ -4,15 +4,6 @@
 
 namespace
 {
-DirectX::XMFLOAT3 getOffset(const DirectX::XMFLOAT3& v1, const DirectX::XMFLOAT3& v2, float t)
-{
-    DirectX::XMFLOAT3 f;
-    f.x = v1.x + (v2.x - v1.x) * t;
-    f.y = v1.y + (v2.y - v1.y) * t;
-    f.z = v1.z + (v2.z - v1.z) * t;
-    return f;
-}
-
 const std::vector<DirectX::XMFLOAT3> c_vertexOffset{
     {0.0f, 0.0f, 0.0f},
     {1.0f, 0.0f, 0.0f},
@@ -355,13 +346,15 @@ void MarchingCubes::generateMesh(float limit)
     }
 }
 
-const std::vector<DirectX::XMFLOAT3>& MarchingCubes::getVertices() const
+const std::vector<MarchingCubes::Vertex>& MarchingCubes::getVertices() const
 {
     return m_vertices;
 }
 
 void MarchingCubes::generateCubeMesh(float x, float y, float z, const std::array<float, 8>& values)
 {
+    using namespace DirectX;
+
     int triangleIndex = 0;
     for (size_t i = 0; i < values.size(); ++i)
     {
@@ -372,16 +365,28 @@ void MarchingCubes::generateCubeMesh(float x, float y, float z, const std::array
     }
 
     const std::vector<int8_t>& edges = c_triangleConnections[triangleIndex];
-    std::vector<float> vertices;
+    std::vector<Vertex> vertices;
+
     for (const int8_t edge : edges)
     {
-        const DirectX::XMFLOAT3& v1 = c_vertexOffset[c_edgeConnections[edge][0]];
-        const DirectX::XMFLOAT3& v2 = c_vertexOffset[c_edgeConnections[edge][1]];
-        DirectX::XMFLOAT3 offset = getOffset(v1, v2, 0.5f);
-        DirectX::XMFLOAT3 vertex{
-            x + offset.x,
-            y + offset.y,
-            z + offset.z};
-        m_vertices.push_back(vertex);
+        const XMVECTOR v0 = XMLoadFloat3(&c_vertexOffset[c_edgeConnections[edge][0]]);
+        const XMVECTOR v1 = XMLoadFloat3(&c_vertexOffset[c_edgeConnections[edge][1]]);
+        const XMVECTOR offset = XMVectorLerp(v0, v1, 0.5f);
+        Vertex v;
+        v.position = XMVectorSet(x, y, z, 0.0f) + offset;
+        vertices.push_back(v);
     }
+
+    for (size_t i = 0; i < vertices.size(); i += 3)
+    {
+        const XMVECTOR& v0 = vertices[i + 0].position;
+        const XMVECTOR& v1 = vertices[i + 1].position;
+        const XMVECTOR& v2 = vertices[i + 2].position;
+        const XMVECTOR n = XMVector3Normalize(XMVector3Cross(v1 - v0, v2 - v0));
+        vertices[i + 0].normal = n;
+        vertices[i + 1].normal = n;
+        vertices[i + 2].normal = n;
+    }
+
+    m_vertices.insert(m_vertices.end(), vertices.begin(), vertices.end());
 }

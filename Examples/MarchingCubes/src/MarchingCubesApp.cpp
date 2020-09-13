@@ -18,13 +18,14 @@
 namespace
 {
 const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
-    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+    {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
 }
 
 bool MarchingCubesApp::initialize()
 {
     m_marchingCubes.createData(32);
-    m_marchingCubes.generateMesh(225);
+    m_marchingCubes.generateMesh(180);
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
@@ -69,20 +70,22 @@ bool MarchingCubesApp::initialize()
 void MarchingCubesApp::update()
 {
     static fw::Transformation transformation;
-    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
+    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.000001f);
     transformation.updateWorldMatrix();
 
     m_cameraController.update();
 
     m_camera.updateViewMatrix();
 
-    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
-    DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
+    const DirectX::XMMATRIX world = DirectX::XMMatrixTranspose(transformation.getWorldMatrix());
+    const DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
+    const DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
 
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
-    char* mappedData = nullptr;
+    DirectX::XMMATRIX* mappedData = nullptr;
     CHECK(m_constantBuffers[currentFrameIndex]->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
-    memcpy(&mappedData[0], &wvp, sizeof(DirectX::XMMATRIX));
+    memcpy(&mappedData[0], &world, sizeof(DirectX::XMMATRIX));
+    memcpy(&mappedData[1], &wvp, sizeof(DirectX::XMMATRIX));
     m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
@@ -159,7 +162,7 @@ void MarchingCubesApp::createConstantBuffer()
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
-    uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
+    uint32_t constantBufferSize = fw::roundUpByteSize(2 * sizeof(DirectX::XMFLOAT4X4));
     m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
 
     for (int i = 0; i < m_constantBuffers.size(); ++i)
@@ -181,13 +184,13 @@ void MarchingCubesApp::createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12Graphics
     m_vertexUploadBuffers.resize(1);
     RenderObject& ro = m_renderObjects[0];
 
-    const std::vector<DirectX::XMFLOAT3>& vertices = m_marchingCubes.getVertices();
-    const size_t vertexBufferSize = vertices.size() * sizeof(DirectX::XMFLOAT3);
+    const std::vector<MarchingCubes::Vertex>& vertices = m_marchingCubes.getVertices();
+    const size_t vertexBufferSize = vertices.size() * sizeof(MarchingCubes::Vertex);
 
     ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[0].vertexUploadBuffer);
 
     ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
-    ro.vertexBufferView.StrideInBytes = sizeof(DirectX::XMFLOAT3);
+    ro.vertexBufferView.StrideInBytes = sizeof(MarchingCubes::Vertex);
     ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
     ro.vertexCount = fw::uintSize(vertices);
 }
