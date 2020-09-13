@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include "MarchingCubes.h"
+
 #include <fw/Application.h>
 #include <fw/Camera.h>
 #include <fw/CameraController.h>
@@ -26,11 +28,9 @@ private:
     struct RenderObject
     {
         Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer;
-        Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer;
         D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
-        D3D12_INDEX_BUFFER_VIEW indexBufferView;
         Microsoft::WRL::ComPtr<ID3D12Resource> texture;
-        UINT numIndices;
+        UINT vertexCount;
     };
 
     struct VertexUploadBuffers
@@ -38,6 +38,8 @@ private:
         Microsoft::WRL::ComPtr<ID3D12Resource> vertexUploadBuffer;
         Microsoft::WRL::ComPtr<ID3D12Resource> indexUploadBuffer;
     };
+
+    MarchingCubes m_marchingCubes;
 
     D3D12_VIEWPORT m_screenViewport;
     D3D12_RECT m_scissorRect;

@@ -25,7 +25,7 @@ VertexOut VS(VertexIn vertexIn)
 
 float4 PS(VertexOut vertexOut) : SV_Target
 {
-    return 1.0;
+	return 0.5;
 }
 
 

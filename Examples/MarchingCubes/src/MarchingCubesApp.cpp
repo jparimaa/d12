@@ -23,6 +23,9 @@ const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
 
 bool MarchingCubesApp::initialize()
 {
+    m_marchingCubes.createData(32);
+    m_marchingCubes.generateMesh(225);
+
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
     m_renderObjects.resize(1);
@@ -127,8 +130,7 @@ void MarchingCubesApp::fillCommandList()
         textureHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
 
         commandList->IASetVertexBuffers(0, 1, &ro.vertexBufferView);
-        commandList->IASetIndexBuffer(&ro.indexBufferView);
-        commandList->DrawIndexedInstanced(ro.numIndices, 1, 0, 0, 0);
+        commandList->DrawInstanced(ro.vertexCount, 1, 0, 0);
     }
 
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
@@ -179,28 +181,15 @@ void MarchingCubesApp::createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12Graphics
     m_vertexUploadBuffers.resize(1);
     RenderObject& ro = m_renderObjects[0];
 
-    // clang-format off
-    std::vector<float> vertices{
-		-0.5f, -0.5f, 0.5f, 
-		0.0f, 0.5f, 0.5f, 
-		0.5f, -0.5f, 0.5f};
-    // clang-format on
-    std::vector<uint16_t> indices{0, 1, 2};
-    const size_t vertexBufferSize = vertices.size() * sizeof(float);
-    const size_t indexBufferSize = indices.size() * sizeof(uint16_t);
+    const std::vector<DirectX::XMFLOAT3>& vertices = m_marchingCubes.getVertices();
+    const size_t vertexBufferSize = vertices.size() * sizeof(DirectX::XMFLOAT3);
 
     ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[0].vertexUploadBuffer);
-    ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), indices.data(), indexBufferSize, m_vertexUploadBuffers[0].indexUploadBuffer);
 
     ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
-    ro.vertexBufferView.StrideInBytes = 3 * sizeof(float);
+    ro.vertexBufferView.StrideInBytes = sizeof(DirectX::XMFLOAT3);
     ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
-
-    ro.indexBufferView.BufferLocation = ro.indexBuffer->GetGPUVirtualAddress();
-    ro.indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-    ro.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
-
-    ro.numIndices = static_cast<UINT>(indices.size());
+    ro.vertexCount = fw::uintSize(vertices);
 }
 
 void MarchingCubesApp::createShaders()
@@ -258,6 +247,7 @@ void MarchingCubesApp::createRenderPSO()
     psoDesc.VS = {reinterpret_cast<BYTE*>(m_vertexShader->GetBufferPointer()), m_vertexShader->GetBufferSize()};
     psoDesc.PS = {reinterpret_cast<BYTE*>(m_pixelShader->GetBufferPointer()), m_pixelShader->GetBufferSize()};
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     psoDesc.SampleMask = UINT_MAX;
