@@ -24,8 +24,8 @@ const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
 
 bool MarchingCubesApp::initialize()
 {
-    m_marchingCubes.createData(32);
-    m_marchingCubes.generateMesh(180);
+    m_marchingCubes.createData(64);
+    m_marchingCubes.generateMesh(0.0f);
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
@@ -47,6 +47,7 @@ bool MarchingCubesApp::initialize()
     m_vertexUploadBuffers.clear();
 
     // Camera
+    m_camera.setFarClipDistance(1000.0f);
     m_cameraController.setCamera(&m_camera);
     m_camera.getTransformation().setPosition(0.0f, 10.0f, -50.0f);
 

@@ -1,4 +1,5 @@
 ﻿#include "MarchingCubes.h"
+#include "FastNoise.h"
 
 #include <DirectXMath.h>
 
@@ -306,16 +307,21 @@ const std::vector<std::vector<int8_t>> c_triangleConnections
 
 void MarchingCubes::createData(size_t size)
 {
+    FastNoise fastNoise;
+    fastNoise.SetFrequency(0.05f);
+    fastNoise.SetInterp(FastNoise::Linear);
     m_grid.resize(size);
-    for (auto& layer : m_grid)
+    for (size_t z = 0; z < size; ++z)
     {
+        auto& layer = m_grid[z];
         layer.resize(size);
-        for (auto& row : layer)
+        for (size_t y = 0; y < size; ++y)
         {
+            auto& row = layer[y];
             row.resize(size);
-            for (float& value : row)
+            for (size_t x = 0; x < size; ++x)
             {
-                value = static_cast<float>(rand() % 255);
+                row[x] = fastNoise.GetPerlin(float(x), float(y), float(z));
             }
         }
     }
