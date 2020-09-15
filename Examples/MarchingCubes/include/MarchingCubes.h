@@ -23,6 +23,7 @@ public:
 private:
     Grid m_grid;
     float m_limit = 0.0f;
+    float m_scale = 0.5f;
     std::vector<Vertex> m_vertices;
 
     void generateCubeMesh(float x, float y, float z, const std::array<float, 8>& values);
