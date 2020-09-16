@@ -24,8 +24,7 @@ const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
 
 bool MarchingCubesApp::initialize()
 {
-    m_marchingCubes.createData(128);
-    m_marchingCubes.generateMesh(0.0f);
+    m_marchingCubes.generateVertices(32);
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 

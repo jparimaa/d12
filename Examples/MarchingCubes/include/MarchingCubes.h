@@ -8,23 +8,36 @@
 class MarchingCubes
 {
 public:
-    using Grid = std::vector<std::vector<std::vector<float>>>;
-
     struct Vertex
     {
         DirectX::XMVECTOR position;
         DirectX::XMVECTOR normal;
     };
 
-    void createData(size_t size);
-    void generateMesh(float limit);
+    void generateVertices(size_t size);
     const std::vector<Vertex>& getVertices() const;
+    const std::vector<int>& getIndices() const;
 
 private:
-    Grid m_grid;
-    float m_limit = 0.0f;
-    float m_scale = 0.5f;
-    std::vector<Vertex> m_vertices;
+    using DataSet = std::vector<std::vector<std::vector<float>>>;
+    DataSet m_dataSet;
+    const float m_limit = 0.0f;
 
-    void generateCubeMesh(float x, float y, float z, const std::array<float, 8>& values);
+    struct CubeInfo
+    {
+        std::vector<Vertex> vertices;
+        std::vector<int> indices;
+        std::vector<DirectX::XMVECTOR> m_shadingNormals;
+    };
+    using CubeData = std::vector<std::vector<std::vector<CubeInfo>>>;
+    CubeData m_cubeData;
+
+    std::vector<Vertex> m_vertices;
+    std::vector<int> m_indices;
+
+    void generateData(size_t size);
+    void generateMesh();
+    void generateCubeTriangles(CubeInfo& cubeInfo, size_t x, size_t y, size_t z, const std::array<float, 8>& values);
+    void generateIndicesAndShadingNormals();
+    void generateVertexDataForRendering();
 };
