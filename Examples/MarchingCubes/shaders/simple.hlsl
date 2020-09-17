@@ -17,9 +17,6 @@ struct VertexOut
 	float4 normal : NORMAL;
 };
 
-Texture2D g_texture : register(t0);
-SamplerState g_sampler : register(s0);
-
 VertexOut VS(VertexIn vertexIn)
 {
 	VertexOut vertexOut;
@@ -34,7 +31,8 @@ float4 PS(VertexOut vertexOut) : SV_Target
 	float3 L = float3(-1.0f, -1.0f, 1.0);
 	float3 N = normalize(vertexOut.normal.xyz);
     float NdotL = max(0.0, dot(N, L));	
-	return max(0.3f, NdotL) * float4(vertexOut.positionWorld.xyz / 25.0f, 1.0);
+	return max(0.3f, NdotL) * float4(vertexOut.positionWorld.xyz / 64.0f, 1.0);
+	//return float4(N, 1.0);
 }
 
 

@@ -24,11 +24,9 @@ const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
 
 bool MarchingCubesApp::initialize()
 {
-    m_marchingCubes.generateVertices(32);
+    m_marchingCubes.generateVertices(64);
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
-
-    m_renderObjects.resize(1);
 
     createDescriptorHeap();
     createConstantBuffer();
@@ -126,16 +124,9 @@ void MarchingCubesApp::fillCommandList()
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-
-    for (const RenderObject& ro : m_renderObjects)
-    {
-        commandList->SetGraphicsRootDescriptorTable(1, textureHandle);
-        textureHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
-
-        commandList->IASetVertexBuffers(0, 1, &ro.vertexBufferView);
-        commandList->DrawInstanced(ro.vertexCount, 1, 0, 0);
-    }
+    commandList->IASetVertexBuffers(0, 1, &m_renderObject.vertexBufferView);
+    commandList->IASetIndexBuffer(&m_renderObject.indexBufferView);
+    commandList->DrawIndexedInstanced(m_renderObject.indexCount, 1, 0, 0, 0);
 
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
@@ -149,7 +140,7 @@ void MarchingCubesApp::onGUI()
 void MarchingCubesApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
-    size_t numMeshes = m_renderObjects.size();
+    size_t numMeshes = 1;
     descriptorHeapDesc.NumDescriptors = static_cast<int>(numMeshes);
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
@@ -183,17 +174,26 @@ void MarchingCubesApp::createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12Graphics
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
     m_vertexUploadBuffers.resize(1);
-    RenderObject& ro = m_renderObjects[0];
+    RenderObject& ro = m_renderObject;
 
     const std::vector<MarchingCubes::Vertex>& vertices = m_marchingCubes.getVertices();
     const size_t vertexBufferSize = vertices.size() * sizeof(MarchingCubes::Vertex);
 
+    const std::vector<uint16_t>& indices = m_marchingCubes.getIndices();
+    const size_t indexBufferSize = indices.size() * sizeof(uint16_t);
+
     ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[0].vertexUploadBuffer);
+    ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), indices.data(), indexBufferSize, m_vertexUploadBuffers[0].indexUploadBuffer);
 
     ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
     ro.vertexBufferView.StrideInBytes = sizeof(MarchingCubes::Vertex);
     ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
-    ro.vertexCount = fw::uintSize(vertices);
+
+    ro.indexBufferView.BufferLocation = ro.indexBuffer->GetGPUVirtualAddress();
+    ro.indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    ro.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
+
+    ro.indexCount = fw::uintSize(indices);
 }
 
 void MarchingCubesApp::createShaders()
@@ -206,29 +206,10 @@ void MarchingCubesApp::createShaders()
 
 void MarchingCubesApp::createRootSignature()
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(1);
     rootParameters[0].InitAsConstantBufferView(0);
 
-    std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
-    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    rootParameters[1].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
-
-    D3D12_STATIC_SAMPLER_DESC sampler{};
-    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.MipLODBias = 0;
-    sampler.MaxAnisotropy = 0;
-    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
-    sampler.MinLOD = 0.0f;
-    sampler.MaxLOD = D3D12_FLOAT32_MAX;
-    sampler.ShaderRegister = 0;
-    sampler.RegisterSpace = 0;
-    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     Microsoft::WRL::ComPtr<ID3DBlob> serializedRootSig = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> errorBlob = nullptr;
