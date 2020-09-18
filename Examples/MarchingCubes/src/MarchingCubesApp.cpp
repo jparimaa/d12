@@ -24,7 +24,7 @@ const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
 
 bool MarchingCubesApp::initialize()
 {
-    m_marchingCubes.generateVertices(64);
+    m_marchingCubes.generateVertices(32);
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
@@ -179,8 +179,8 @@ void MarchingCubesApp::createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12Graphics
     const std::vector<MarchingCubes::Vertex>& vertices = m_marchingCubes.getVertices();
     const size_t vertexBufferSize = vertices.size() * sizeof(MarchingCubes::Vertex);
 
-    const std::vector<uint16_t>& indices = m_marchingCubes.getIndices();
-    const size_t indexBufferSize = indices.size() * sizeof(uint16_t);
+    const std::vector<MarchingCubes::IndexType>& indices = m_marchingCubes.getIndices();
+    const size_t indexBufferSize = indices.size() * sizeof(MarchingCubes::IndexType);
 
     ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[0].vertexUploadBuffer);
     ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), indices.data(), indexBufferSize, m_vertexUploadBuffers[0].indexUploadBuffer);
@@ -190,7 +190,7 @@ void MarchingCubesApp::createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12Graphics
     ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
 
     ro.indexBufferView.BufferLocation = ro.indexBuffer->GetGPUVirtualAddress();
-    ro.indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    ro.indexBufferView.Format = DXGI_FORMAT_R32_UINT;
     ro.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
 
     ro.indexCount = fw::uintSize(indices);
