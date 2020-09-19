@@ -28,7 +28,7 @@ private:
     struct CubeInfo
     {
         std::vector<Vertex> vertices;
-        std::vector<int64_t> indices;
+        std::vector<IndexType> indices;
     };
     using CubeData = std::vector<std::vector<std::vector<CubeInfo>>>;
     CubeData m_cubeData;

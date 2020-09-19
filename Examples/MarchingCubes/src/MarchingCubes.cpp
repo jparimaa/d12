@@ -404,7 +404,7 @@ void MarchingCubes::generateCubeTriangles(CubeInfo& cubeInfo, size_t x, size_t y
         cubeInfo.vertices[i + 2].normal = n;
     }
 
-    cubeInfo.indices = std::vector<int64_t>(vertexCount, -1);
+    cubeInfo.indices = std::vector<IndexType>(vertexCount, -1);
 }
 
 void MarchingCubes::generateIndicesAndShadingNormals()
@@ -515,7 +515,7 @@ void MarchingCubes::generateVertexDataForRendering()
                 for (size_t i = 0; i < cubeInfo.vertices.size(); ++i)
                 {
                     assert(cubeInfo.indices[i] >= 0);
-                    m_indices.push_back(static_cast<IndexType>(cubeInfo.indices[i]));
+                    m_indices.push_back(cubeInfo.indices[i]);
                     if (cubeInfo.indices[i] == indexCounter)
                     {
                         cubeInfo.vertices[i].normal = DirectX::XMVector3Normalize(cubeInfo.vertices[i].normal);

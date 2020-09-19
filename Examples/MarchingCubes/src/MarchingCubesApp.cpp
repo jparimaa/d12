@@ -20,11 +20,15 @@ namespace
 const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
     {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
     {"NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-}
+
+std::chrono::steady_clock::time_point s_begin;
+} // namespace
 
 bool MarchingCubesApp::initialize()
 {
-    m_marchingCubes.generateVertices(32);
+    s_begin = std::chrono::steady_clock::now();
+
+    m_marchingCubes.generateVertices(256);
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
 
@@ -68,6 +72,11 @@ bool MarchingCubesApp::initialize()
 
 void MarchingCubesApp::update()
 {
+    std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+    const auto timeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_begin).count();
+    const float timeInSeconds = static_cast<float>(timeInMs) / 1000.0f;
+
     static fw::Transformation transformation;
     transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.000001f);
     transformation.updateWorldMatrix();
@@ -79,12 +88,15 @@ void MarchingCubesApp::update()
     const DirectX::XMMATRIX world = DirectX::XMMatrixTranspose(transformation.getWorldMatrix());
     const DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
     const DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
+    const DirectX::XMVECTOR& pos = m_camera.getTransformation().position;
+    const DirectX::XMVECTOR posAndTime = DirectX::XMVectorSetW(pos, timeInSeconds);
 
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
     DirectX::XMMATRIX* mappedData = nullptr;
     CHECK(m_constantBuffers[currentFrameIndex]->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
     memcpy(&mappedData[0], &world, sizeof(DirectX::XMMATRIX));
     memcpy(&mappedData[1], &wvp, sizeof(DirectX::XMMATRIX));
+    memcpy(&mappedData[2], &posAndTime, sizeof(DirectX::XMVECTOR));
     m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
@@ -154,7 +166,7 @@ void MarchingCubesApp::createConstantBuffer()
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
-    uint32_t constantBufferSize = fw::roundUpByteSize(2 * sizeof(DirectX::XMFLOAT4X4));
+    uint32_t constantBufferSize = fw::roundUpByteSize(2 * sizeof(DirectX::XMFLOAT4X4) + sizeof(DirectX::XMVECTOR));
     m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
 
     for (int i = 0; i < m_constantBuffers.size(); ++i)
