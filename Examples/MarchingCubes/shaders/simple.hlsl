@@ -52,10 +52,11 @@ float4 PS(VertexOut vertexOut) :
         }
     }
 
-    const float3 color = float3(
-        sin(vertexOut.positionWorld.x * 0.1) * 0.35 + 0.5,
-        cos(vertexOut.positionWorld.y * 0.2) * 0.35 + 0.5,
-        -cos(vertexOut.positionWorld.z * 0.3) * 0.35 + 0.5);
+    float3 color = float3(sin(vertexOut.positionWorld.x * 0.1),
+                          cos(vertexOut.positionWorld.y * 0.2),
+                          -cos(vertexOut.positionWorld.z * 0.3));
+    color *= 0.35;
+    color += 0.5;
 
     return (directLightPower + pointLightPower) * float4(color, 1.0);
 }

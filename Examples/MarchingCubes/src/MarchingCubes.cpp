@@ -3,6 +3,11 @@
 
 #include <DirectXMath.h>
 
+#include <functional>
+#include <chrono>
+#include <iostream>
+#include <string>
+
 namespace
 {
 const std::vector<DirectX::XMFLOAT3> c_vertexOffset{
@@ -283,15 +288,28 @@ const std::vector<std::vector<int8_t>> c_triangleConnections
 	{}
 };
 // clang-format on
+
+template<typename T>
+void executeAndMeasureTime(const T& func, const std::string& name)
+{
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    func();
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    std::cout << name << ", " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << " ms" << std::endl;
+}
 } // namespace
 
 void MarchingCubes::generateVertices(size_t size)
 {
-    generateData(size);
-    generateMesh();
+    auto generateData = std::bind(&MarchingCubes::generateData, this, size);
+    executeAndMeasureTime(generateData, "generateData");
+    auto generateMesh = std::bind(&MarchingCubes::generateMesh, this);
+    executeAndMeasureTime(generateMesh, "generateMesh");
     m_dataSet.clear();
-    generateIndicesAndShadingNormals();
-    generateVertexDataForRendering();
+    auto generateIndicesAndShadingNormals = std::bind(&MarchingCubes::generateIndicesAndShadingNormals, this);
+    executeAndMeasureTime(generateIndicesAndShadingNormals, "generateIndicesAndShadingNormals");
+    auto generateVertexDataForRendering = std::bind(&MarchingCubes::generateVertexDataForRendering, this);
+    executeAndMeasureTime(generateVertexDataForRendering, "generateVertexDataForRendering");
     m_cubeData.clear();
 }
 
