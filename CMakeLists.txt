@@ -12,7 +12,7 @@ set(GLFW_PATH CACHE PATH "Path to GLFW")
 set(ASSIMP_PATH CACHE PATH "Path to assimp")
 
 function(ADD_PROJECT_WITH_DEFAULT_SETTINGS PROJECT_NAME)
-    file(GLOB SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
+    file(GLOB SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.*)
 
     add_executable(${PROJECT_NAME} ${SOURCES})
 
@@ -28,7 +28,7 @@ function(ADD_PROJECT_WITH_DEFAULT_SETTINGS PROJECT_NAME)
 
     target_include_directories(${PROJECT_NAME}
         PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
             "${CMAKE_CURRENT_SOURCE_DIR}/../../Framework/include"
             "${GLFW_PATH}/include"
     )
