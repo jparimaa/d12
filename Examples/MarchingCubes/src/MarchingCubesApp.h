@@ -28,9 +28,10 @@ private:
     struct RenderObject
     {
         Microsoft::WRL::ComPtr<ID3D12Resource> vertexBuffer;
+        Microsoft::WRL::ComPtr<ID3D12Resource> indexBuffer;
         D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
-        Microsoft::WRL::ComPtr<ID3D12Resource> texture;
-        UINT vertexCount;
+        D3D12_INDEX_BUFFER_VIEW indexBufferView;
+        UINT indexCount;
     };
 
     struct VertexUploadBuffers
@@ -55,7 +56,7 @@ private:
     Microsoft::WRL::ComPtr<ID3DBlob> m_vertexShader = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> m_pixelShader = nullptr;
 
-    std::vector<RenderObject> m_renderObjects;
+    RenderObject m_renderObject;
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_renderPSO = nullptr;
 

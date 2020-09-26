@@ -1,18 +1,15 @@
 ﻿#include "MarchingCubes.h"
+#include "FastNoise.h"
 
 #include <DirectXMath.h>
 
+#include <functional>
+#include <chrono>
+#include <iostream>
+#include <string>
+
 namespace
 {
-DirectX::XMFLOAT3 getOffset(const DirectX::XMFLOAT3& v1, const DirectX::XMFLOAT3& v2, float t)
-{
-    DirectX::XMFLOAT3 f;
-    f.x = v1.x + (v2.x - v1.x) * t;
-    f.y = v1.y + (v2.y - v1.y) * t;
-    f.z = v1.z + (v2.z - v1.z) * t;
-    return f;
-}
-
 const std::vector<DirectX::XMFLOAT3> c_vertexOffset{
     {0.0f, 0.0f, 0.0f},
     {1.0f, 0.0f, 0.0f},
@@ -29,26 +26,6 @@ const uint8_t c_edgeConnections[12][2]
 	{0,1}, {1,2}, {2,3}, {3,0},
 	{4,5}, {5,6}, {6,7}, {7,4},
 	{0,4}, {1,5}, {2,6}, {3,7}
-};
-
-const uint16_t c_edgeFlags[]
-{
-	0x000, 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c, 0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00, 
-	0x190, 0x099, 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c, 0x99c, 0x895, 0xb9f, 0xa96, 0xd9a, 0xc93, 0xf99, 0xe90, 
-	0x230, 0x339, 0x033, 0x13a, 0x636, 0x73f, 0x435, 0x53c, 0xa3c, 0xb35, 0x83f, 0x936, 0xe3a, 0xf33, 0xc39, 0xd30, 
-	0x3a0, 0x2a9, 0x1a3, 0x0aa, 0x7a6, 0x6af, 0x5a5, 0x4ac, 0xbac, 0xaa5, 0x9af, 0x8a6, 0xfaa, 0xea3, 0xda9, 0xca0, 
-	0x460, 0x569, 0x663, 0x76a, 0x066, 0x16f, 0x265, 0x36c, 0xc6c, 0xd65, 0xe6f, 0xf66, 0x86a, 0x963, 0xa69, 0xb60, 
-	0x5f0, 0x4f9, 0x7f3, 0x6fa, 0x1f6, 0x0ff, 0x3f5, 0x2fc, 0xdfc, 0xcf5, 0xfff, 0xef6, 0x9fa, 0x8f3, 0xbf9, 0xaf0, 
-	0x650, 0x759, 0x453, 0x55a, 0x256, 0x35f, 0x055, 0x15c, 0xe5c, 0xf55, 0xc5f, 0xd56, 0xa5a, 0xb53, 0x859, 0x950, 
-	0x7c0, 0x6c9, 0x5c3, 0x4ca, 0x3c6, 0x2cf, 0x1c5, 0x0cc, 0xfcc, 0xec5, 0xdcf, 0xcc6, 0xbca, 0xac3, 0x9c9, 0x8c0, 
-	0x8c0, 0x9c9, 0xac3, 0xbca, 0xcc6, 0xdcf, 0xec5, 0xfcc, 0x0cc, 0x1c5, 0x2cf, 0x3c6, 0x4ca, 0x5c3, 0x6c9, 0x7c0, 
-	0x950, 0x859, 0xb53, 0xa5a, 0xd56, 0xc5f, 0xf55, 0xe5c, 0x15c, 0x055, 0x35f, 0x256, 0x55a, 0x453, 0x759, 0x650, 
-	0xaf0, 0xbf9, 0x8f3, 0x9fa, 0xef6, 0xfff, 0xcf5, 0xdfc, 0x2fc, 0x3f5, 0x0ff, 0x1f6, 0x6fa, 0x7f3, 0x4f9, 0x5f0, 
-	0xb60, 0xa69, 0x963, 0x86a, 0xf66, 0xe6f, 0xd65, 0xc6c, 0x36c, 0x265, 0x16f, 0x066, 0x76a, 0x663, 0x569, 0x460, 
-	0xca0, 0xda9, 0xea3, 0xfaa, 0x8a6, 0x9af, 0xaa5, 0xbac, 0x4ac, 0x5a5, 0x6af, 0x7a6, 0x0aa, 0x1a3, 0x2a9, 0x3a0, 
-	0xd30, 0xc39, 0xf33, 0xe3a, 0x936, 0x83f, 0xb35, 0xa3c, 0x53c, 0x435, 0x73f, 0x636, 0x13a, 0x033, 0x339, 0x230, 
-	0xe90, 0xf99, 0xc93, 0xd9a, 0xa96, 0xb9f, 0x895, 0x99c, 0x69c, 0x795, 0x49f, 0x596, 0x29a, 0x393, 0x099, 0x190, 
-	0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c, 0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x000
 };
 
 const std::vector<std::vector<int8_t>> c_triangleConnections
@@ -311,77 +288,260 @@ const std::vector<std::vector<int8_t>> c_triangleConnections
 	{}
 };
 // clang-format on
+
+template<typename T>
+void executeAndMeasureTime(const T& func, const std::string& name)
+{
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    func();
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    std::cout << name << ", " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << " ms" << std::endl;
+}
 } // namespace
 
-void MarchingCubes::createData(size_t size)
+void MarchingCubes::generateVertices(size_t size)
 {
-    m_grid.resize(size);
-    for (auto& layer : m_grid)
-    {
-        layer.resize(size);
-        for (auto& row : layer)
-        {
-            row.resize(size);
-            for (float& value : row)
-            {
-                value = static_cast<float>(rand() % 255);
-            }
-        }
-    }
+    auto generateData = std::bind(&MarchingCubes::generateData, this, size);
+    executeAndMeasureTime(generateData, "generateData");
+    auto generateMesh = std::bind(&MarchingCubes::generateMesh, this);
+    executeAndMeasureTime(generateMesh, "generateMesh");
+    m_dataSet.clear();
+    auto generateIndicesAndShadingNormals = std::bind(&MarchingCubes::generateIndicesAndShadingNormals, this);
+    executeAndMeasureTime(generateIndicesAndShadingNormals, "generateIndicesAndShadingNormals");
+    auto generateVertexDataForRendering = std::bind(&MarchingCubes::generateVertexDataForRendering, this);
+    executeAndMeasureTime(generateVertexDataForRendering, "generateVertexDataForRendering");
+    m_cubeData.clear();
 }
 
-void MarchingCubes::generateMesh(float limit)
-{
-    m_limit = limit;
-    const size_t size = m_grid.size() - 1;
-    for (size_t z = 0; z < size; ++z)
-    {
-        for (size_t y = 0; y < size; ++y)
-        {
-            for (size_t x = 0; x < size; ++x)
-            {
-                std::array<float, 8> values{
-                    m_grid[z][y][x],
-                    m_grid[z][y][x + 1],
-                    m_grid[z][y + 1][x + 1],
-                    m_grid[z][y + 1][x],
-                    m_grid[z + 1][y][x],
-                    m_grid[z + 1][y][x + 1],
-                    m_grid[z + 1][y + 1][x + 1],
-                    m_grid[z + 1][y + 1][x]};
-                generateCubeMesh(static_cast<float>(x), static_cast<float>(y), static_cast<float>(z), values);
-            }
-        }
-    }
-}
-
-const std::vector<DirectX::XMFLOAT3>& MarchingCubes::getVertices() const
+const std::vector<MarchingCubes::Vertex>& MarchingCubes::getVertices() const
 {
     return m_vertices;
 }
 
-void MarchingCubes::generateCubeMesh(float x, float y, float z, const std::array<float, 8>& values)
+const std::vector<MarchingCubes::IndexType>& MarchingCubes::getIndices() const
 {
+    return m_indices;
+}
+
+void MarchingCubes::generateData(size_t size)
+{
+    FastNoise fastNoise;
+    fastNoise.SetFrequency(0.04f);
+    fastNoise.SetInterp(FastNoise::Quintic);
+    m_dataSet.resize(size);
+    for (size_t z = 0; z < size; ++z)
+    {
+        auto& layer = m_dataSet[z];
+        layer.resize(size);
+        for (size_t y = 0; y < size; ++y)
+        {
+            auto& row = layer[y];
+            row.resize(size);
+            for (size_t x = 0; x < size; ++x)
+            {
+                row[x] = fastNoise.GetPerlin(float(x), float(y), float(z));
+            }
+        }
+    }
+}
+
+void MarchingCubes::generateMesh()
+{
+    const size_t size = m_dataSet.size() - 1;
+    m_cubeData.resize(size);
+    for (size_t z = 0; z < size; ++z)
+    {
+        m_cubeData[z].resize(size);
+        for (size_t y = 0; y < size; ++y)
+        {
+            m_cubeData[z][y].resize(size);
+            for (size_t x = 0; x < size; ++x)
+            {
+                std::array<float, 8> values{
+                    m_dataSet[z][y][x],
+                    m_dataSet[z][y][x + 1],
+                    m_dataSet[z][y + 1][x + 1],
+                    m_dataSet[z][y + 1][x],
+                    m_dataSet[z + 1][y][x],
+                    m_dataSet[z + 1][y][x + 1],
+                    m_dataSet[z + 1][y + 1][x + 1],
+                    m_dataSet[z + 1][y + 1][x]};
+                generateCubeTriangles(m_cubeData[z][y][x], x, y, z, values);
+            }
+        }
+    }
+}
+
+void MarchingCubes::generateCubeTriangles(CubeInfo& cubeInfo, size_t x, size_t y, size_t z, const std::array<float, 8>& values)
+{
+    using namespace DirectX;
+
     int triangleIndex = 0;
     for (size_t i = 0; i < values.size(); ++i)
     {
-        if (values[i] >= m_limit)
+        if (values[i] > m_limit)
         {
             triangleIndex |= 1 << i;
         }
     }
 
     const std::vector<int8_t>& edges = c_triangleConnections[triangleIndex];
-    std::vector<float> vertices;
+
+    const float xf = static_cast<float>(x);
+    const float yf = static_cast<float>(y);
+    const float zf = static_cast<float>(z);
+
     for (const int8_t edge : edges)
     {
-        const DirectX::XMFLOAT3& v1 = c_vertexOffset[c_edgeConnections[edge][0]];
-        const DirectX::XMFLOAT3& v2 = c_vertexOffset[c_edgeConnections[edge][1]];
-        DirectX::XMFLOAT3 offset = getOffset(v1, v2, 0.5f);
-        DirectX::XMFLOAT3 vertex{
-            x + offset.x,
-            y + offset.y,
-            z + offset.z};
-        m_vertices.push_back(vertex);
+        const uint8_t& v0Index = c_edgeConnections[edge][0];
+        const uint8_t& v1Index = c_edgeConnections[edge][1];
+        const float& v0Value = values[v0Index];
+        const float& v1Value = values[v1Index];
+        const float diff = v1Value - v0Value;
+        assert(diff != 0.0f);
+        const float t = v1Value / diff;
+        assert(t >= 0.0f && t <= 1.0f);
+        const XMVECTOR v0 = XMLoadFloat3(&c_vertexOffset[v0Index]);
+        const XMVECTOR v1 = XMLoadFloat3(&c_vertexOffset[v1Index]);
+        const XMVECTOR offset = XMVectorLerp(v0, v1, t);
+        Vertex v;
+        v.position = XMVectorSet(xf, yf, zf, 0.0f) + offset;
+        cubeInfo.vertices.push_back(v);
+    }
+
+    const size_t vertexCount = cubeInfo.vertices.size();
+
+    for (size_t i = 0; i < vertexCount; i += 3)
+    {
+        const XMVECTOR& v0 = cubeInfo.vertices[i + 0].position;
+        const XMVECTOR& v1 = cubeInfo.vertices[i + 1].position;
+        const XMVECTOR& v2 = cubeInfo.vertices[i + 2].position;
+        const XMVECTOR n = XMVector3Normalize(XMVector3Cross(v1 - v0, v2 - v0));
+        cubeInfo.vertices[i + 0].normal = n;
+        cubeInfo.vertices[i + 1].normal = n;
+        cubeInfo.vertices[i + 2].normal = n;
+    }
+
+    cubeInfo.indices = std::vector<IndexType>(vertexCount, -1);
+}
+
+void MarchingCubes::generateIndicesAndShadingNormals()
+{
+    int indexCounter = 0;
+    const int size = static_cast<int>(m_cubeData.size());
+    for (int z = 0; z < size; ++z)
+    {
+        for (int y = 0; y < size; ++y)
+        {
+            for (int x = 0; x < size; ++x)
+            {
+                CubeInfo& cubeInfo1 = m_cubeData[z][y][x];
+                std::vector<CubeInfo*> adjacentInfos = getAdjacentCubeInfos(x, y, z);
+                for (size_t i = 0; i < cubeInfo1.vertices.size(); ++i)
+                {
+                    if (cubeInfo1.indices[i] != -1)
+                    {
+                        continue;
+                    }
+                    cubeInfo1.indices[i] = indexCounter++;
+                    const DirectX::XMVECTOR& p = cubeInfo1.vertices[i].position;
+                    for (CubeInfo* cubeInfo2 : adjacentInfos)
+                    {
+                        const std::vector<int> equalIndices = getEqualVertexIndex(cubeInfo2, p);
+                        if (!equalIndices.empty())
+                        {
+                            mergeVertices(cubeInfo1, *cubeInfo2, static_cast<int>(i), equalIndices);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+std::vector<MarchingCubes::CubeInfo*> MarchingCubes::getAdjacentCubeInfos(int x, int y, int z)
+{
+    std::vector<CubeInfo*> infos;
+    const int maxSize = static_cast<int>(m_cubeData.size());
+    for (int zz = 0; zz <= 1; ++zz)
+    {
+        for (int yy = 0; yy <= 1; ++yy)
+        {
+            for (int xx = 0; xx <= 1; ++xx)
+            {
+                const int zPos = z + zz;
+                const int yPos = y + yy;
+                const int xPos = x + xx;
+                if (zPos >= maxSize || yPos >= maxSize || xPos >= maxSize)
+                {
+                    continue;
+                }
+
+                CubeInfo* ci = &m_cubeData[zPos][yPos][xPos];
+
+                if (ci->vertices.empty())
+                {
+                    continue;
+                }
+
+                infos.push_back(ci);
+            }
+        }
+    }
+    return infos;
+}
+
+std::vector<int> MarchingCubes::getEqualVertexIndex(CubeInfo* cubeInfo, const DirectX::XMVECTOR& p)
+{
+    std::vector<int> equals;
+    for (size_t i = 0; i < cubeInfo->vertices.size(); ++i)
+    {
+        if (DirectX::XMVector3Equal(cubeInfo->vertices[i].position, p))
+        {
+            equals.push_back(static_cast<int>(i));
+        }
+    }
+    return equals;
+}
+
+void MarchingCubes::mergeVertices(CubeInfo& c1, CubeInfo& c2, int i1, const std::vector<int>& equalIndices)
+{
+    bool same = &c1 == &c2;
+    for (int index : equalIndices)
+    {
+        if (same && index == i1)
+        {
+            continue;
+        }
+        assert(c2.indices[index] == -1);
+        c2.indices[index] = c1.indices[i1];
+        c1.vertices[i1].normal = DirectX::XMVectorAdd(c1.vertices[i1].normal, c2.vertices[index].normal);
+    }
+}
+
+void MarchingCubes::generateVertexDataForRendering()
+{
+    const size_t size = m_cubeData.size();
+    int indexCounter = 0;
+    for (size_t z = 0; z < size; ++z)
+    {
+        for (size_t y = 0; y < size; ++y)
+        {
+            for (size_t x = 0; x < size; ++x)
+            {
+                CubeInfo& cubeInfo = m_cubeData[z][y][x];
+                for (size_t i = 0; i < cubeInfo.vertices.size(); ++i)
+                {
+                    assert(cubeInfo.indices[i] >= 0);
+                    m_indices.push_back(cubeInfo.indices[i]);
+                    if (cubeInfo.indices[i] == indexCounter)
+                    {
+                        cubeInfo.vertices[i].normal = DirectX::XMVector3Normalize(cubeInfo.vertices[i].normal);
+                        m_vertices.push_back(cubeInfo.vertices[i]);
+                        ++indexCounter;
+                    }
+                }
+            }
+        }
     }
 }

@@ -18,17 +18,19 @@
 namespace
 {
 const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
-    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-}
+    {"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+    {"NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 16, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+
+std::chrono::steady_clock::time_point s_begin;
+} // namespace
 
 bool MarchingCubesApp::initialize()
 {
-    m_marchingCubes.createData(32);
-    m_marchingCubes.generateMesh(225);
+    s_begin = std::chrono::steady_clock::now();
+
+    m_marchingCubes.generateVertices(256);
 
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
-
-    m_renderObjects.resize(1);
 
     createDescriptorHeap();
     createConstantBuffer();
@@ -46,8 +48,10 @@ bool MarchingCubesApp::initialize()
     m_vertexUploadBuffers.clear();
 
     // Camera
+    m_camera.setFarClipDistance(1000.0f);
     m_cameraController.setCamera(&m_camera);
-    m_camera.getTransformation().setPosition(0.0f, 10.0f, -50.0f);
+    m_cameraController.setMovementSpeed(10.0f);
+    m_camera.getTransformation().setPosition(20.0f, 30.0f, -30.0f);
 
     // Setup viewport and scissor
     int windowWidth = fw::API::getWindowWidth();
@@ -68,21 +72,31 @@ bool MarchingCubesApp::initialize()
 
 void MarchingCubesApp::update()
 {
+    std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+    const auto timeInMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_begin).count();
+    const float timeInSeconds = static_cast<float>(timeInMs) / 1000.0f;
+
     static fw::Transformation transformation;
-    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
+    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.000001f);
     transformation.updateWorldMatrix();
 
     m_cameraController.update();
 
     m_camera.updateViewMatrix();
 
-    DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
-    DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
+    const DirectX::XMMATRIX world = DirectX::XMMatrixTranspose(transformation.getWorldMatrix());
+    const DirectX::XMMATRIX worldViewProj = transformation.getWorldMatrix() * m_camera.getViewMatrix() * m_camera.getProjectionMatrix();
+    const DirectX::XMMATRIX wvp = DirectX::XMMatrixTranspose(worldViewProj);
+    const DirectX::XMVECTOR& pos = m_camera.getTransformation().position;
+    const DirectX::XMVECTOR posAndTime = DirectX::XMVectorSetW(pos, timeInSeconds);
 
     int currentFrameIndex = fw::API::getCurrentFrameIndex();
-    char* mappedData = nullptr;
+    DirectX::XMMATRIX* mappedData = nullptr;
     CHECK(m_constantBuffers[currentFrameIndex]->Map(0, nullptr, reinterpret_cast<void**>(&mappedData)));
-    memcpy(&mappedData[0], &wvp, sizeof(DirectX::XMMATRIX));
+    memcpy(&mappedData[0], &world, sizeof(DirectX::XMMATRIX));
+    memcpy(&mappedData[1], &wvp, sizeof(DirectX::XMMATRIX));
+    memcpy(&mappedData[2], &posAndTime, sizeof(DirectX::XMVECTOR));
     m_constantBuffers[currentFrameIndex]->Unmap(0, nullptr);
 
     if (fw::API::isKeyReleased(GLFW_KEY_ESCAPE))
@@ -122,16 +136,9 @@ void MarchingCubesApp::fillCommandList()
     std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
     commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-
-    for (const RenderObject& ro : m_renderObjects)
-    {
-        commandList->SetGraphicsRootDescriptorTable(1, textureHandle);
-        textureHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
-
-        commandList->IASetVertexBuffers(0, 1, &ro.vertexBufferView);
-        commandList->DrawInstanced(ro.vertexCount, 1, 0, 0);
-    }
+    commandList->IASetVertexBuffers(0, 1, &m_renderObject.vertexBufferView);
+    commandList->IASetIndexBuffer(&m_renderObject.indexBufferView);
+    commandList->DrawIndexedInstanced(m_renderObject.indexCount, 1, 0, 0, 0);
 
     commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
@@ -145,7 +152,7 @@ void MarchingCubesApp::onGUI()
 void MarchingCubesApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
-    size_t numMeshes = m_renderObjects.size();
+    size_t numMeshes = 1;
     descriptorHeapDesc.NumDescriptors = static_cast<int>(numMeshes);
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
@@ -159,7 +166,7 @@ void MarchingCubesApp::createConstantBuffer()
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
-    uint32_t constantBufferSize = fw::roundUpByteSize(sizeof(DirectX::XMFLOAT4X4));
+    uint32_t constantBufferSize = fw::roundUpByteSize(2 * sizeof(DirectX::XMFLOAT4X4) + sizeof(DirectX::XMVECTOR));
     m_constantBuffers.resize(fw::API::getSwapChainBufferCount());
 
     for (int i = 0; i < m_constantBuffers.size(); ++i)
@@ -179,17 +186,26 @@ void MarchingCubesApp::createVertexBuffers(Microsoft::WRL::ComPtr<ID3D12Graphics
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
     m_vertexUploadBuffers.resize(1);
-    RenderObject& ro = m_renderObjects[0];
+    RenderObject& ro = m_renderObject;
 
-    const std::vector<DirectX::XMFLOAT3>& vertices = m_marchingCubes.getVertices();
-    const size_t vertexBufferSize = vertices.size() * sizeof(DirectX::XMFLOAT3);
+    const std::vector<MarchingCubes::Vertex>& vertices = m_marchingCubes.getVertices();
+    const size_t vertexBufferSize = vertices.size() * sizeof(MarchingCubes::Vertex);
+
+    const std::vector<MarchingCubes::IndexType>& indices = m_marchingCubes.getIndices();
+    const size_t indexBufferSize = indices.size() * sizeof(MarchingCubes::IndexType);
 
     ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[0].vertexUploadBuffer);
+    ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), indices.data(), indexBufferSize, m_vertexUploadBuffers[0].indexUploadBuffer);
 
     ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
-    ro.vertexBufferView.StrideInBytes = sizeof(DirectX::XMFLOAT3);
+    ro.vertexBufferView.StrideInBytes = sizeof(MarchingCubes::Vertex);
     ro.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
-    ro.vertexCount = fw::uintSize(vertices);
+
+    ro.indexBufferView.BufferLocation = ro.indexBuffer->GetGPUVirtualAddress();
+    ro.indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+    ro.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
+
+    ro.indexCount = fw::uintSize(indices);
 }
 
 void MarchingCubesApp::createShaders()
@@ -202,29 +218,10 @@ void MarchingCubesApp::createShaders()
 
 void MarchingCubesApp::createRootSignature()
 {
-    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(2);
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(1);
     rootParameters[0].InitAsConstantBufferView(0);
 
-    std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
-    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    rootParameters[1].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
-
-    D3D12_STATIC_SAMPLER_DESC sampler{};
-    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.MipLODBias = 0;
-    sampler.MaxAnisotropy = 0;
-    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
-    sampler.MinLOD = 0.0f;
-    sampler.MaxLOD = D3D12_FLOAT32_MAX;
-    sampler.ShaderRegister = 0;
-    sampler.RegisterSpace = 0;
-    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-
-    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
     Microsoft::WRL::ComPtr<ID3DBlob> serializedRootSig = nullptr;
     Microsoft::WRL::ComPtr<ID3DBlob> errorBlob = nullptr;
