@@ -17,12 +17,20 @@
 
 namespace
 {
-const std::vector<D3D12_INPUT_ELEMENT_DESC> c_vertexInputLayout = {
-    {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"NORMAL", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TANGENT", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-    {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-}
+const float c_clearColor[4] = {0.0, 0.0f, 0.1f, 1.0f};
+const DXGI_FORMAT c_dsvFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+const DXGI_FORMAT c_rtvFormat = DXGI_FORMAT_R32G32B32A32_FLOAT;
+
+// clang-format off
+const std::vector<float> c_fullscreenTriangleVertices = {
+    -1.0f,  1.0f, 0.0f, 0.0f, 0.0f,
+     3.0f,  1.0f, 0.0f, 2.0f, 0.0f,
+    -1.0f, -3.0f, 0.0f, 0.0f, 2.0f,
+};
+
+const std::vector<uint16_t> c_fullscreenTriangleIndices = {0, 1, 2};
+// clang-format on
+} // namespace
 
 bool RWTextureApp::initialize()
 {
@@ -36,10 +44,14 @@ bool RWTextureApp::initialize()
     createTextures(model, commandList);
     createVertexBuffers(model, commandList);
 
-    createShaders();
+    createRenderShaders();
+    createBlitShaders();
     createRootSignature();
 
     createRenderPSO();
+    createBlitPSO();
+    createRenderTexture(commandList);
+    createFullscreenTriangleVertexBuffer(commandList);
 
     // Execute and wait initialization commands
     CHECK(commandList->Close());
@@ -95,50 +107,90 @@ void RWTextureApp::update()
 
 void RWTextureApp::fillCommandList()
 {
+    const int currentFrameIndex = fw::API::getCurrentFrameIndex();
+
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator = fw::API::getCurrentFrameCommandAllocator();
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> commandList = fw::API::getCommandList();
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cl = fw::API::getCommandList();
 
     CHECK(commandAllocator->Reset());
-    CHECK(commandList->Reset(commandAllocator.Get(), m_renderPSO.Get()));
+    CHECK(cl->Reset(commandAllocator.Get(), m_renderPSO.Get()));
 
-    ID3D12Resource* currentBackBuffer = fw::API::getCurrentBackBuffer();
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+    cl->RSSetViewports(1, &m_screenViewport);
+    cl->RSSetScissorRects(1, &m_scissorRect);
 
-    commandList->RSSetViewports(1, &m_screenViewport);
-    commandList->RSSetScissorRects(1, &m_scissorRect);
-
-    CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
-    const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
-    commandList->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
-
-    D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = fw::API::getDepthStencilView();
-    commandList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-
-    commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
-
-    commandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-    commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-    commandList->SetGraphicsRootConstantBufferView(0, m_constantBuffers[fw::API::getCurrentFrameIndex()]->GetGPUVirtualAddress());
-
-    std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_descriptorHeap.Get()};
-    commandList->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
-
-    CD3DX12_GPU_DESCRIPTOR_HANDLE textureHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart());
-
-    for (const RenderObject& ro : m_renderObjects)
+    // Set render targets
     {
-        commandList->SetGraphicsRootDescriptorTable(1, textureHandle);
-        textureHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+        CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+        rtvHandle.Offset(currentFrameIndex, fw::API::getRtvDescriptorIncrementSize());
+        cl->ClearRenderTargetView(rtvHandle, c_clearColor, 0, nullptr);
 
-        commandList->IASetVertexBuffers(0, 1, &ro.vertexBufferView);
-        commandList->IASetIndexBuffer(&ro.indexBufferView);
-        commandList->DrawIndexedInstanced(ro.numIndices, 1, 0, 0, 0);
+        CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+        dsvHandle.Offset(currentFrameIndex, fw::API::getDsvDescriptorIncrementSize());
+        cl->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+
+        cl->OMSetRenderTargets(1, &rtvHandle, true, &dsvHandle);
     }
 
-    commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(currentBackBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+    // Render
+    CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+    {
+        cl->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-    CHECK(commandList->Close());
+        cl->SetGraphicsRootSignature(m_rootSignature.Get());
+        cl->SetGraphicsRootConstantBufferView(0, m_constantBuffers[fw::API::getCurrentFrameIndex()]->GetGPUVirtualAddress());
+
+        std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_srvHeap.Get()};
+        cl->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
+
+        for (const RenderObject& ro : m_renderObjects)
+        {
+            cl->SetGraphicsRootDescriptorTable(1, srvHandle);
+            srvHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+            cl->IASetVertexBuffers(0, 1, &ro.vertexBufferView);
+            cl->IASetIndexBuffer(&ro.indexBufferView);
+            cl->DrawIndexedInstanced(ro.numIndices, 1, 0, 0, 0);
+        }
+    }
+
+    // Backbuffer blit
+    {
+        cl->SetPipelineState(m_blitPSO.Get());
+
+        ID3D12Resource* backBuffer = fw::API::getCurrentBackBuffer();
+        ID3D12Resource* renderTexture = m_renderTextures[currentFrameIndex].Get();
+
+        {
+            std::vector<D3D12_RESOURCE_BARRIER> barriers{
+                CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET), //
+                CD3DX12_RESOURCE_BARRIER::Transition(renderTexture, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)};
+            cl->ResourceBarrier(fw::uintSize(barriers), barriers.data());
+        }
+
+        CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
+        const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
+        cl->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
+
+        D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = fw::API::getDepthStencilView();
+        cl->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+        cl->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
+
+        srvHandle.Offset(currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
+        cl->SetGraphicsRootDescriptorTable(1, srvHandle);
+
+        cl->IASetVertexBuffers(0, 1, &m_fullscreenTriangle.vertexBufferView);
+        cl->IASetIndexBuffer(&m_fullscreenTriangle.indexBufferView);
+        cl->DrawIndexedInstanced(m_fullscreenTriangle.numIndices, 1, 0, 0, 0);
+
+        {
+            std::vector<D3D12_RESOURCE_BARRIER> barriers{
+                CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT), //
+                CD3DX12_RESOURCE_BARRIER::Transition(renderTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET)};
+            cl->ResourceBarrier(fw::uintSize(barriers), barriers.data());
+        }
+    }
+
+    CHECK(cl->Close());
 }
 
 void RWTextureApp::onGUI()
@@ -158,14 +210,14 @@ void RWTextureApp::loadModel(fw::Model& model)
 void RWTextureApp::createDescriptorHeap()
 {
     D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc;
-    size_t numMeshes = m_renderObjects.size();
+    size_t numMeshes = m_renderObjects.size() + (2 * fw::API::getSwapChainBufferCount());
     descriptorHeapDesc.NumDescriptors = static_cast<int>(numMeshes);
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     descriptorHeapDesc.NodeMask = 0;
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    CHECK(d3dDevice->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&m_descriptorHeap)));
+    CHECK(d3dDevice->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
 }
 
 void RWTextureApp::createConstantBuffer()
@@ -187,7 +239,7 @@ void RWTextureApp::createConstantBuffer()
     }
 }
 
-void RWTextureApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
+void RWTextureApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl)
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
@@ -206,7 +258,7 @@ void RWTextureApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr
     size_t numMeshes = meshes.size();
     m_textureUploadBuffers.resize(numMeshes);
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart());
+    CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_srvHeap->GetCPUDescriptorHandleForHeapStart());
 
     for (size_t i = 0; i < numMeshes; ++i)
     {
@@ -222,7 +274,7 @@ void RWTextureApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr
         const int numBytes = texWidth * texHeight * texChannels;
 
         RenderObject& ro = m_renderObjects[i];
-        ro.texture = fw::createGPUTexture(d3dDevice.Get(), commandList.Get(), pixels, numBytes, textureDesc, 4, m_textureUploadBuffers[i]);
+        ro.texture = fw::createGPUTexture(d3dDevice.Get(), cl.Get(), pixels, numBytes, textureDesc, 4, m_textureUploadBuffers[i]);
 
         stbi_image_free(pixels);
 
@@ -237,7 +289,7 @@ void RWTextureApp::createTextures(const fw::Model& model, Microsoft::WRL::ComPtr
     }
 }
 
-void RWTextureApp::createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& commandList)
+void RWTextureApp::createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl)
 {
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
 
@@ -253,8 +305,8 @@ void RWTextureApp::createVertexBuffers(const fw::Model& model, Microsoft::WRL::C
         const size_t vertexBufferSize = vertices.size() * sizeof(fw::Mesh::Vertex);
         const size_t indexBufferSize = mesh.indices.size() * sizeof(uint16_t);
 
-        ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[i].vertexUploadBuffer);
-        ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), commandList.Get(), mesh.indices.data(), indexBufferSize, m_vertexUploadBuffers[i].indexUploadBuffer);
+        ro.vertexBuffer = fw::createGPUBuffer(d3dDevice.Get(), cl.Get(), vertices.data(), vertexBufferSize, m_vertexUploadBuffers[i].vertexUploadBuffer);
+        ro.indexBuffer = fw::createGPUBuffer(d3dDevice.Get(), cl.Get(), mesh.indices.data(), indexBufferSize, m_vertexUploadBuffers[i].indexUploadBuffer);
 
         ro.vertexBufferView.BufferLocation = ro.vertexBuffer->GetGPUVirtualAddress();
         ro.vertexBufferView.StrideInBytes = sizeof(fw::Mesh::Vertex);
@@ -268,12 +320,20 @@ void RWTextureApp::createVertexBuffers(const fw::Model& model, Microsoft::WRL::C
     }
 }
 
-void RWTextureApp::createShaders()
+void RWTextureApp::createRenderShaders()
 {
     std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
     shaderFile += L"simple.hlsl";
-    m_vertexShader = fw::compileShader(shaderFile, nullptr, "VS", "vs_5_0");
-    m_pixelShader = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_0");
+    m_renderShaders.vertex = fw::compileShader(shaderFile, nullptr, "VS", "vs_5_0");
+    m_renderShaders.pixel = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_0");
+}
+
+void RWTextureApp::createBlitShaders()
+{
+    std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
+    shaderFile += L"blit.hlsl";
+    m_blitShaders.vertex = fw::compileShader(shaderFile, nullptr, "VS", "vs_5_0");
+    m_blitShaders.pixel = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_0");
 }
 
 void RWTextureApp::createRootSignature()
@@ -317,11 +377,43 @@ void RWTextureApp::createRootSignature()
 
 void RWTextureApp::createRenderPSO()
 {
+    const std::vector<D3D12_INPUT_ELEMENT_DESC> vertexInputLayout = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"NORMAL", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TANGENT", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
-    psoDesc.InputLayout = {c_vertexInputLayout.data(), (UINT)c_vertexInputLayout.size()};
+    psoDesc.InputLayout = {vertexInputLayout.data(), (UINT)vertexInputLayout.size()};
     psoDesc.pRootSignature = m_rootSignature.Get();
-    psoDesc.VS = {reinterpret_cast<BYTE*>(m_vertexShader->GetBufferPointer()), m_vertexShader->GetBufferSize()};
-    psoDesc.PS = {reinterpret_cast<BYTE*>(m_pixelShader->GetBufferPointer()), m_pixelShader->GetBufferSize()};
+    psoDesc.VS = {reinterpret_cast<BYTE*>(m_renderShaders.vertex->GetBufferPointer()), m_renderShaders.vertex->GetBufferSize()};
+    psoDesc.PS = {reinterpret_cast<BYTE*>(m_renderShaders.pixel->GetBufferPointer()), m_renderShaders.pixel->GetBufferSize()};
+    psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.SampleMask = UINT_MAX;
+    psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+    psoDesc.NumRenderTargets = 1;
+    psoDesc.RTVFormats[0] = c_rtvFormat;
+    psoDesc.SampleDesc.Count = 1;
+    psoDesc.SampleDesc.Quality = 0;
+    psoDesc.DSVFormat = c_dsvFormat;
+
+    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
+    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_renderPSO)));
+}
+
+void RWTextureApp::createBlitPSO()
+{
+    const std::vector<D3D12_INPUT_ELEMENT_DESC> vertexInputLayout = {
+        {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+        {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
+
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.InputLayout = {vertexInputLayout.data(), (UINT)vertexInputLayout.size()};
+    psoDesc.pRootSignature = m_rootSignature.Get();
+    psoDesc.VS = {reinterpret_cast<BYTE*>(m_blitShaders.vertex->GetBufferPointer()), m_blitShaders.vertex->GetBufferSize()};
+    psoDesc.PS = {reinterpret_cast<BYTE*>(m_blitShaders.pixel->GetBufferPointer()), m_blitShaders.pixel->GetBufferSize()};
     psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
@@ -334,5 +426,190 @@ void RWTextureApp::createRenderPSO()
     psoDesc.DSVFormat = fw::API::getDepthStencilFormat();
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_renderPSO)));
+    CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_blitPSO)));
+}
+
+void RWTextureApp::createRenderTexture(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl)
+{
+    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
+    const int swapChainSize = fw::API::getSwapChainBufferCount();
+
+    // Create texture resources
+    D3D12_RESOURCE_DESC resourceDesc{};
+    {
+        resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        resourceDesc.Alignment = 0;
+        resourceDesc.SampleDesc.Count = 1;
+        resourceDesc.SampleDesc.Quality = 0;
+        resourceDesc.MipLevels = 1;
+        resourceDesc.DepthOrArraySize = 1;
+        resourceDesc.Width = fw::API::getWindowWidth();
+        resourceDesc.Height = fw::API::getWindowHeight();
+        resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        resourceDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+
+        D3D12_CLEAR_VALUE clearValue{};
+        clearValue.Color[0] = c_clearColor[0];
+        clearValue.Color[1] = c_clearColor[1];
+        clearValue.Color[2] = c_clearColor[2];
+        clearValue.Color[3] = c_clearColor[3];
+        clearValue.Format = resourceDesc.Format;
+
+        CD3DX12_HEAP_PROPERTIES heapProperty(D3D12_HEAP_TYPE_DEFAULT);
+        m_renderTextures.resize(swapChainSize);
+
+        for (int i = 0; i < swapChainSize; ++i)
+        {
+            CHECK(d3dDevice->CreateCommittedResource(&heapProperty,
+                                                     D3D12_HEAP_FLAG_NONE,
+                                                     &resourceDesc,
+                                                     D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                                     &clearValue,
+                                                     IID_PPV_ARGS(m_renderTextures[i].GetAddressOf())));
+        }
+    }
+
+    // Create RTV heap and render target views
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC rtvDescriptorHeapDesc{};
+        rtvDescriptorHeapDesc.NumDescriptors = swapChainSize;
+        rtvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        rtvDescriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        rtvDescriptorHeapDesc.NodeMask = 0;
+
+        CHECK(d3dDevice->CreateDescriptorHeap(&rtvDescriptorHeapDesc, IID_PPV_ARGS(&m_rtvHeap)));
+
+        D3D12_RENDER_TARGET_VIEW_DESC renderTargetViewDesc{};
+        renderTargetViewDesc.Texture2D.MipSlice = 0;
+        renderTargetViewDesc.Texture2D.PlaneSlice = 0;
+        renderTargetViewDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+        renderTargetViewDesc.Format = resourceDesc.Format;
+
+        CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+
+        for (int i = 0; i < swapChainSize; ++i)
+        {
+            d3dDevice->CreateRenderTargetView(m_renderTextures[i].Get(), &renderTargetViewDesc, rtvHandle);
+            rtvHandle.Offset(1, fw::API::getRtvDescriptorIncrementSize());
+        }
+    }
+
+    // Create SRV and UAV
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+        srvDesc.Texture2D.MipLevels = resourceDesc.MipLevels;
+        srvDesc.Texture2D.MostDetailedMip = 0;
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Format = resourceDesc.Format;
+
+        const int offset = static_cast<int>(m_renderObjects.size());
+        CD3DX12_CPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_srvHeap->GetCPUDescriptorHandleForHeapStart());
+        srvHandle.Offset(offset, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+        for (int i = 0; i < swapChainSize; ++i)
+        {
+            d3dDevice->CreateShaderResourceView(m_renderTextures[i].Get(), &srvDesc, srvHandle);
+            srvHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+        }
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+        uavDesc.Texture2D.MipSlice = 0;
+        uavDesc.Texture2D.PlaneSlice = 0;
+        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uavDesc.Format = resourceDesc.Format;
+
+        for (int i = 0; i < swapChainSize; ++i)
+        {
+            d3dDevice->CreateUnorderedAccessView(m_renderTextures[i].Get(), nullptr, &uavDesc, srvHandle);
+            srvHandle.Offset(1, fw::API::getCbvSrvUavDescriptorIncrementSize());
+        }
+    }
+
+    // Create the depth stencil buffers
+    {
+        D3D12_RESOURCE_DESC depthStencilDesc{};
+        depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        depthStencilDesc.Alignment = 0;
+        depthStencilDesc.Width = resourceDesc.Width;
+        depthStencilDesc.Height = resourceDesc.Height;
+        depthStencilDesc.DepthOrArraySize = 1;
+        depthStencilDesc.MipLevels = 1;
+        depthStencilDesc.Format = c_dsvFormat;
+        depthStencilDesc.SampleDesc.Count = 1;
+        depthStencilDesc.SampleDesc.Quality = 0;
+        depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+        D3D12_CLEAR_VALUE optClear;
+        optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+        optClear.DepthStencil.Depth = 1.0f;
+        optClear.DepthStencil.Stencil = 0;
+
+        m_depthStencilBuffers.resize(swapChainSize);
+        for (int i = 0; i < swapChainSize; ++i)
+        {
+            CHECK(d3dDevice->CreateCommittedResource(&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+                                                     D3D12_HEAP_FLAG_NONE,
+                                                     &depthStencilDesc,
+                                                     D3D12_RESOURCE_STATE_COMMON,
+                                                     &optClear,
+                                                     IID_PPV_ARGS(m_depthStencilBuffers[i].GetAddressOf())));
+        }
+    }
+
+    // Create dsv heap
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+        dsvHeapDesc.NumDescriptors = swapChainSize;
+        dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+        dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        dsvHeapDesc.NodeMask = 0;
+        CHECK(d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(m_dsvHeap.GetAddressOf())));
+    }
+
+    // Create depth stencil views
+    {
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
+        dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
+        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+        dsvDesc.Format = c_dsvFormat;
+        dsvDesc.Texture2D.MipSlice = 0;
+
+        CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+
+        for (int i = 0; i < swapChainSize; ++i)
+        {
+            d3dDevice->CreateDepthStencilView(m_depthStencilBuffers[i].Get(), &dsvDesc, dsvHandle);
+            dsvHandle.Offset(1, fw::API::getDsvDescriptorIncrementSize());
+            cl->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_depthStencilBuffers[i].Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE));
+        }
+    }
+}
+
+void RWTextureApp::createFullscreenTriangleVertexBuffer(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl)
+{
+    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
+
+    const size_t vertexBufferSize = c_fullscreenTriangleVertices.size() * sizeof(float);
+    const size_t indexBufferSize = c_fullscreenTriangleIndices.size() * sizeof(uint16_t);
+
+    m_vertexUploadBuffers.resize(m_vertexUploadBuffers.size() + 1);
+    VertexUploadBuffers& uploadBuffer = m_vertexUploadBuffers.back();
+    ID3D12Device* device = d3dDevice.Get();
+
+    RenderObject& fst = m_fullscreenTriangle;
+    fst.vertexBuffer = fw::createGPUBuffer(device, cl.Get(), c_fullscreenTriangleVertices.data(), vertexBufferSize, uploadBuffer.vertexUploadBuffer);
+    fst.indexBuffer = fw::createGPUBuffer(device, cl.Get(), c_fullscreenTriangleIndices.data(), indexBufferSize, uploadBuffer.indexUploadBuffer);
+
+    fst.vertexBufferView.BufferLocation = fst.vertexBuffer->GetGPUVirtualAddress();
+    fst.vertexBufferView.StrideInBytes = sizeof(float) * 5;
+    fst.vertexBufferView.SizeInBytes = (UINT)vertexBufferSize;
+
+    fst.indexBufferView.BufferLocation = fst.indexBuffer->GetGPUVirtualAddress();
+    fst.indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+    fst.indexBufferView.SizeInBytes = (UINT)indexBufferSize;
+
+    fst.numIndices = fw::uintSize(c_fullscreenTriangleIndices);
 }
