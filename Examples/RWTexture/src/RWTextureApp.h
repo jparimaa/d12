@@ -42,16 +42,17 @@ private:
 
     struct Shaders
     {
-        Microsoft::WRL::ComPtr<ID3DBlob> vertex = nullptr;
-        Microsoft::WRL::ComPtr<ID3DBlob> pixel = nullptr;
+        Microsoft::WRL::ComPtr<ID3DBlob> vertex;
+        Microsoft::WRL::ComPtr<ID3DBlob> pixel;
     };
 
     D3D12_VIEWPORT m_screenViewport;
     D3D12_RECT m_scissorRect;
 
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_computeRootSignature;
 
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvHeap = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvHeap;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_constantBuffers;
 
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_textureUploadBuffers;
@@ -59,20 +60,22 @@ private:
 
     Shaders m_renderShaders;
     Shaders m_blitShaders;
+    Microsoft::WRL::ComPtr<ID3DBlob> m_computeShader;
 
     std::vector<RenderObject> m_renderObjects;
     RenderObject m_fullscreenTriangle;
 
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_renderPSO = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_blitPSO = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_renderPSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_computePSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_blitPSO;
 
     fw::Camera m_camera;
     fw::CameraController m_cameraController;
 
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_renderTextures;
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> m_depthStencilBuffers;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_dsvHeap = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_dsvHeap;
 
     void loadModel(fw::Model& model);
     void createDescriptorHeap();
@@ -80,9 +83,12 @@ private:
     void createTextures(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl);
     void createVertexBuffers(const fw::Model& model, Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl);
     void createRenderShaders();
+    void createComputeShader();
     void createBlitShaders();
     void createRootSignature();
+    void createComputeRootSignature();
     void createRenderPSO();
+    void createComputePSO();
     void createBlitPSO();
     void createRenderTexture(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl);
     void createFullscreenTriangleVertexBuffer(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& cl);

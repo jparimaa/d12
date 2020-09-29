@@ -1,4 +1,4 @@
-#include "Common.h"
+﻿#include "Common.h"
 
 namespace fw
 {
@@ -112,6 +112,21 @@ Microsoft::WRL::ComPtr<ID3D12Resource> createGPUTexture(ID3D12Device* device,
     cmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(gpuTexture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
 
     return gpuTexture;
+}
+
+void serializeAndCreateRootSignature(ID3D12Device* device, const D3D12_ROOT_SIGNATURE_DESC& desc, Microsoft::WRL::ComPtr<ID3D12RootSignature>& rootSig)
+{
+    Microsoft::WRL::ComPtr<ID3DBlob> signatureBlob;
+    Microsoft::WRL::ComPtr<ID3DBlob> errorBlob;
+    HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1_0, &signatureBlob, &errorBlob);
+
+    if (errorBlob)
+    {
+        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+        CHECK(hr);
+    }
+
+    CHECK(device->CreateRootSignature(0, signatureBlob->GetBufferPointer(), signatureBlob->GetBufferSize(), IID_PPV_ARGS(&rootSig)));
 }
 
 } // namespace fw

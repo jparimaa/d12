@@ -46,9 +46,12 @@ bool RWTextureApp::initialize()
 
     createRenderShaders();
     createBlitShaders();
+    createComputeShader();
     createRootSignature();
+    createComputeRootSignature();
 
     createRenderPSO();
+    createComputePSO();
     createBlitPSO();
     createRenderTexture(commandList);
     createFullscreenTriangleVertexBuffer(commandList);
@@ -108,6 +111,8 @@ void RWTextureApp::update()
 void RWTextureApp::fillCommandList()
 {
     const int currentFrameIndex = fw::API::getCurrentFrameIndex();
+    const int swapchainLength = fw::API::getSwapChainBufferCount();
+    const int renderObjectCount = static_cast<int>(m_renderObjects.size());
 
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> commandAllocator = fw::API::getCurrentFrameCommandAllocator();
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cl = fw::API::getCommandList();
@@ -118,22 +123,20 @@ void RWTextureApp::fillCommandList()
     cl->RSSetViewports(1, &m_screenViewport);
     cl->RSSetScissorRects(1, &m_scissorRect);
 
-    // Set render targets
-    {
-        CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
-        rtvHandle.Offset(currentFrameIndex, fw::API::getRtvDescriptorIncrementSize());
-        cl->ClearRenderTargetView(rtvHandle, c_clearColor, 0, nullptr);
-
-        CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
-        dsvHandle.Offset(currentFrameIndex, fw::API::getDsvDescriptorIncrementSize());
-        cl->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-
-        cl->OMSetRenderTargets(1, &rtvHandle, true, &dsvHandle);
-    }
-
     // Render
-    CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart());
     {
+        {
+            CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_rtvHeap->GetCPUDescriptorHandleForHeapStart());
+            rtvHandle.Offset(currentFrameIndex, fw::API::getRtvDescriptorIncrementSize());
+            cl->ClearRenderTargetView(rtvHandle, c_clearColor, 0, nullptr);
+
+            CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_dsvHeap->GetCPUDescriptorHandleForHeapStart());
+            dsvHandle.Offset(currentFrameIndex, fw::API::getDsvDescriptorIncrementSize());
+            cl->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+
+            cl->OMSetRenderTargets(1, &rtvHandle, true, &dsvHandle);
+        }
+
         cl->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
         cl->SetGraphicsRootSignature(m_rootSignature.Get());
@@ -141,6 +144,8 @@ void RWTextureApp::fillCommandList()
 
         std::vector<ID3D12DescriptorHeap*> descriptorHeaps{m_srvHeap.Get()};
         cl->SetDescriptorHeaps((UINT)descriptorHeaps.size(), descriptorHeaps.data());
+
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart());
 
         for (const RenderObject& ro : m_renderObjects)
         {
@@ -153,29 +158,47 @@ void RWTextureApp::fillCommandList()
         }
     }
 
+    ID3D12Resource* renderTexture = m_renderTextures[currentFrameIndex].Get();
+
+    // Compute
+    {
+        cl->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(renderTexture, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+
+        cl->SetPipelineState(m_computePSO.Get());
+        cl->SetComputeRootSignature(m_computeRootSignature.Get());
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+        srvHandle.Offset(renderObjectCount + swapchainLength + currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
+
+        cl->SetComputeRootDescriptorTable(0, srvHandle);
+        cl->Dispatch(fw::API::getWindowWidth() / 8, fw::API::getWindowHeight() / 8, 1);
+    }
+
     // Backbuffer blit
     {
-        cl->SetPipelineState(m_blitPSO.Get());
-
         ID3D12Resource* backBuffer = fw::API::getCurrentBackBuffer();
-        ID3D12Resource* renderTexture = m_renderTextures[currentFrameIndex].Get();
 
         {
             std::vector<D3D12_RESOURCE_BARRIER> barriers{
-                CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET), //
-                CD3DX12_RESOURCE_BARRIER::Transition(renderTexture, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)};
+                CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET),
+                CD3DX12_RESOURCE_BARRIER::Transition(renderTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)};
             cl->ResourceBarrier(fw::uintSize(barriers), barriers.data());
         }
 
-        CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
-        const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
-        cl->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
+        {
+            CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView = fw::API::getCurrentBackBufferView();
+            const static float clearColor[4] = {0.2f, 0.4f, 0.6f, 1.0f};
+            cl->ClearRenderTargetView(currentBackBufferView, clearColor, 0, nullptr);
 
-        D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = fw::API::getDepthStencilView();
-        cl->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-        cl->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
+            D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = fw::API::getDepthStencilView();
+            cl->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+            cl->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
+        }
 
-        srvHandle.Offset(currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
+        cl->SetPipelineState(m_blitPSO.Get());
+        cl->SetGraphicsRootSignature(m_rootSignature.Get());
+
+        CD3DX12_GPU_DESCRIPTOR_HANDLE srvHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_srvHeap->GetGPUDescriptorHandleForHeapStart());
+        srvHandle.Offset(renderObjectCount + currentFrameIndex, fw::API::getCbvSrvUavDescriptorIncrementSize());
         cl->SetGraphicsRootDescriptorTable(1, srvHandle);
 
         cl->IASetVertexBuffers(0, 1, &m_fullscreenTriangle.vertexBufferView);
@@ -184,7 +207,7 @@ void RWTextureApp::fillCommandList()
 
         {
             std::vector<D3D12_RESOURCE_BARRIER> barriers{
-                CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT), //
+                CD3DX12_RESOURCE_BARRIER::Transition(backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT),
                 CD3DX12_RESOURCE_BARRIER::Transition(renderTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET)};
             cl->ResourceBarrier(fw::uintSize(barriers), barriers.data());
         }
@@ -328,6 +351,13 @@ void RWTextureApp::createRenderShaders()
     m_renderShaders.pixel = fw::compileShader(shaderFile, nullptr, "PS", "ps_5_0");
 }
 
+void RWTextureApp::createComputeShader()
+{
+    std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
+    shaderFile += L"block_greyscale.hlsl";
+    m_computeShader = fw::compileShader(shaderFile, nullptr, "main", "cs_5_0");
+}
+
 void RWTextureApp::createBlitShaders()
 {
     std::wstring shaderFile = fw::stringToWstring(std::string(SHADER_PATH));
@@ -362,17 +392,20 @@ void RWTextureApp::createRootSignature()
 
     CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    Microsoft::WRL::ComPtr<ID3DBlob> serializedRootSig = nullptr;
-    Microsoft::WRL::ComPtr<ID3DBlob> errorBlob = nullptr;
-    CHECK(D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1, serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf()));
+    fw::serializeAndCreateRootSignature(fw::API::getD3dDevice().Get(), rootSigDesc, m_rootSignature);
+}
 
-    if (errorBlob != nullptr)
-    {
-        OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-    }
+void RWTextureApp::createComputeRootSignature()
+{
+    std::vector<CD3DX12_ROOT_PARAMETER> rootParameters(1);
 
-    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
-    CHECK(d3dDevice->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
+    std::vector<CD3DX12_DESCRIPTOR_RANGE> srvDescriptorRanges(1);
+    srvDescriptorRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+    rootParameters[0].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
+
+    CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(fw::uintSize(rootParameters), rootParameters.data(), 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+    fw::serializeAndCreateRootSignature(fw::API::getD3dDevice().Get(), rootSigDesc, m_computeRootSignature);
 }
 
 void RWTextureApp::createRenderPSO()
@@ -401,6 +434,16 @@ void RWTextureApp::createRenderPSO()
 
     Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
     CHECK(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_renderPSO)));
+}
+
+void RWTextureApp::createComputePSO()
+{
+    D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc{};
+    psoDesc.pRootSignature = m_computeRootSignature.Get();
+    psoDesc.CS = {reinterpret_cast<BYTE*>(m_computeShader->GetBufferPointer()), m_computeShader->GetBufferSize()};
+
+    Microsoft::WRL::ComPtr<ID3D12Device> d3dDevice = fw::API::getD3dDevice();
+    CHECK(d3dDevice->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_computePSO)));
 }
 
 void RWTextureApp::createBlitPSO()

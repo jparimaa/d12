@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Macros.h"
 
@@ -40,6 +40,8 @@ Microsoft::WRL::ComPtr<ID3D12Resource> createGPUTexture(ID3D12Device* device,
                                                         int pixelSize,
                                                         Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer,
                                                         std::wstring name = L"Texture");
+
+void serializeAndCreateRootSignature(ID3D12Device* device, const D3D12_ROOT_SIGNATURE_DESC& desc, Microsoft::WRL::ComPtr<ID3D12RootSignature>& rootSig);
 
 template<typename T>
 UINT uintSize(const T& container)

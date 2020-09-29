@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
@@ -37,7 +37,7 @@ public:
 
 private:
     int m_width = 1200;
-    int m_height = 900;
+    int m_height = 960;
     float m_aspectRatio = static_cast<float>(m_width) / static_cast<float>(m_height);
 
     GLFWwindow* m_window = nullptr;
