@@ -86,7 +86,7 @@ bool RWTextureApp::initialize()
 void RWTextureApp::update()
 {
     static fw::Transformation transformation;
-    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0004f);
+    transformation.rotate(DirectX::XMFLOAT3(0.0f, 1.0f, 0.0f), 0.0f);
     transformation.updateWorldMatrix();
 
     m_cameraController.update();
@@ -376,7 +376,7 @@ void RWTextureApp::createRootSignature()
     rootParameters[1].InitAsDescriptorTable(fw::uintSize(srvDescriptorRanges), srvDescriptorRanges.data());
 
     D3D12_STATIC_SAMPLER_DESC sampler{};
-    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
     sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
     sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
     sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;

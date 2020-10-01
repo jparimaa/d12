@@ -20,8 +20,8 @@ Microsoft::WRL::ComPtr<ID3DBlob> compileShader(const std::wstring& filename,
     if (errors != nullptr)
     {
         OutputDebugStringA((char*)errors->GetBufferPointer());
-        CHECK(hr);
     }
+    CHECK(hr);
 
     return byteCode;
 }
